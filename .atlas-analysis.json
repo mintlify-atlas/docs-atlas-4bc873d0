@@ -1,0 +1,139 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Lodum",
+  "projectDescription": "High-performance Python serialization framework inspired by Rust's serde",
+  "theme": "palm",
+  "primaryColor": "#3776ab",
+  "lightColor": "#5d93c9",
+  "darkColor": "#2b5d8a",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/decorator",
+              "concepts/formats",
+              "concepts/field-customization",
+              "concepts/validation"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/basic-usage",
+              "guides/advanced-features",
+              "guides/streaming",
+              "guides/schema-generation",
+              "guides/extensions"
+            ]
+          },
+          {
+            "group": "Format Support",
+            "pages": [
+              "formats/json",
+              "formats/yaml",
+              "formats/toml",
+              "formats/msgpack",
+              "formats/cbor",
+              "formats/bson",
+              "formats/pickle"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/performance",
+              "advanced/architecture",
+              "advanced/implementing-formats",
+              "advanced/migration"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core",
+            "pages": [
+              "api/lodum-decorator",
+              "api/field",
+              "api/asdict-fromdict",
+              "api/schema"
+            ]
+          },
+          {
+            "group": "Formats",
+            "pages": [
+              "api/json",
+              "api/yaml",
+              "api/pickle",
+              "api/toml",
+              "api/msgpack",
+              "api/cbor",
+              "api/bson"
+            ]
+          },
+          {
+            "group": "Validation",
+            "pages": [
+              "api/validators"
+            ]
+          },
+          {
+            "group": "Extensions",
+            "pages": [
+              "api/numpy",
+              "api/pandas",
+              "api/polars"
+            ]
+          },
+          {
+            "group": "Protocols",
+            "pages": [
+              "api/dumper-protocol",
+              "api/loader-protocol"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AST-based bytecode generation for ~64% faster serialization",
+    "Universal API for JSON, YAML, TOML, MsgPack, CBOR, BSON, and Pickle",
+    "Built-in validators (Range, Length, Match, OneOf)",
+    "Field customization with rename, skip, defaults, and custom serializers",
+    "JSON Schema generation for documentation and validation",
+    "Native support for numpy, pandas, and polars",
+    "Streaming serialization for large datasets",
+    "Secure-by-default SafeUnpickler implementation",
+    "Detailed error reporting with path tracking"
+  ],
+  "publicApiSurface": [
+    "@lodum decorator",
+    "field() function",
+    "asdict() and fromdict() functions",
+    "schema() function",
+    "json.dumps() / json.loads() / json.dump_stream() / json.load_stream()",
+    "yaml.dumps() / yaml.loads()",
+    "pickle.dumps() / pickle.loads()",
+    "toml.dumps() / toml.loads()",
+    "msgpack.dumps() / msgpack.loads()",
+    "cbor.dumps() / cbor.loads()",
+    "bson.dumps() / bson.loads()",
+    "validators.Range / Length / Match / OneOf",
+    "Dumper and Loader protocols"
+  ]
+}
