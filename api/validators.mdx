@@ -46,13 +46,13 @@ Raises `DeserializationError` if:
 ### Example
 
 ```python
-from lodum import lodum, Field
+from lodum import lodum, field
 from lodum.validators import Range
 
 @lodum
 class Product:
-    price: float = Field(validators=[Range(min=0.0, max=10000.0)])
-    quantity: int = Field(validators=[Range(min=1)])
+    price: float = field(validate=[Range(min=0.0, max=10000.0)])
+    quantity: int = field(validate=[Range(min=1)])
 
 # Valid
 product = Product(price=99.99, quantity=5)
@@ -92,12 +92,12 @@ Raises `DeserializationError` if:
 ### Example
 
 ```python
-from lodum import lodum, Field
+from lodum import lodum, field
 from lodum.validators import Length
 
 @lodum
 class User:
-    username: str = Field(validators=[Length(min=3, max=20)])
+    username: str = field(validate=[Length(min=3, max=20)])
     tags: list[str] = Field(validators=[Length(max=5)])
 
 # Valid
@@ -133,13 +133,13 @@ Raises `DeserializationError` if:
 ### Example
 
 ```python
-from lodum import lodum, Field
+from lodum import lodum, field
 from lodum.validators import Match
 
 @lodum
 class Contact:
-    email: str = Field(validators=[Match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')])
-    phone: str = Field(validators=[Match(r'^\d{3}-\d{3}-\d{4}$')])
+    email: str = field(validate=[Match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')])
+    phone: str = field(validate=[Match(r'^\d{3}-\d{3}-\d{4}$')])
 
 # Valid
 contact = Contact(email="user@example.com", phone="555-123-4567")
@@ -172,12 +172,12 @@ Raises `DeserializationError` if the value is not in the `options` container.
 ### Example
 
 ```python
-from lodum import lodum, Field
+from lodum import lodum, field
 from lodum.validators import OneOf
 
 @lodum
 class Order:
-    status: str = Field(validators=[OneOf(["pending", "processing", "shipped", "delivered"])])
+    status: str = field(validate=[OneOf(["pending", "processing", "shipped", "delivered"])])
     priority: int = Field(validators=[OneOf({1, 2, 3})])
 
 # Valid
@@ -195,12 +195,12 @@ order = Order(status="pending", priority=5)
 Multiple validators can be applied to a single field:
 
 ```python
-from lodum import lodum, Field
+from lodum import lodum, field
 from lodum.validators import Length, Match
 
 @lodum
 class Account:
-    password: str = Field(validators=[
+    password: str = field(validate=[
         Length(min=8, max=128),
         Match(r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d).*$')  # Must contain uppercase, lowercase, and digit
     ])
@@ -213,6 +213,7 @@ Validators are executed in order, and the first validation failure raises `Deser
 You can create custom validators by subclassing `Validator`:
 
 ```python
+from lodum import lodum, field
 from lodum.validators import Validator
 from lodum.exception import DeserializationError
 
@@ -223,5 +224,5 @@ class Even(Validator):
 
 @lodum
 class EvenNumber:
-    value: int = Field(validators=[Even()])
+    value: int = field(validate=[Even()])
 ```
