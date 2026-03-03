@@ -1,0 +1,354 @@
+---
+title: Pickle Format
+description: Secure Python pickle serialization with Lodum
+---
+
+# Pickle Format
+
+Lodum provides **secure** pickle support with `SafeUnpickler` that prevents arbitrary code execution. Use this for Python-specific serialization when you need maximum compatibility with Python objects.
+
+<Warning>
+**Security Notice:** Standard Python pickle is unsafe and can execute arbitrary code during deserialization. Lodum's `SafeUnpickler` provides protection by only allowing whitelisted types and `@lodum`-decorated classes.
+</Warning>
+
+## Installation
+
+Pickle support is built into Python and Lodum core:
+
+```bash
+pip install lodum
+```
+
+No additional dependencies required.
+
+## API Reference
+
+### dump()
+
+```python
+from lodum import pickle
+
+pickle.dump(obj: Any, target: Optional[Union[IO[bytes], Path]] = None, **kwargs) -> Optional[bytes]
+```
+
+Encodes a Python object to a pickle byte string, ensuring it is safe.
+
+**Parameters:**
+- `obj`: The object to encode (must be a `@lodum`-decorated class)
+- `target`: Optional file-like object or Path to write to
+- `**kwargs`: Additional arguments for `pickle.dump(s)` (e.g., `protocol`)
+
+**Returns:**
+- The pickle bytes if `target` is None, otherwise None
+
+**Security:** The object is validated before pickling to ensure it only contains safe types.
+
+**Example:**
+
+```python
+from lodum import lodum, pickle
+from pathlib import Path
+
+@lodum
+class User:
+    name: str
+    age: int
+    metadata: dict[str, str]
+
+user = User(name="Alice", age=30, metadata={"role": "admin"})
+
+# Serialize to bytes
+pickle_bytes = pickle.dump(user)
+
+# Serialize to file
+pickle.dump(user, Path("user.pkl"))
+```
+
+### dumps()
+
+```python
+pickle.dumps(obj: Any, **kwargs) -> bytes
+```
+
+Legacy alias for `dump(obj)`. Provided for compatibility.
+
+### load()
+
+```python
+pickle.load(
+    cls: Type[T],
+    source: Union[bytes, IO[bytes], Path],
+    max_size: int = DEFAULT_MAX_SIZE
+) -> T
+```
+
+Decodes a pickle from bytes, stream, or file into a Python object using `SafeUnpickler`.
+
+**Parameters:**
+- `cls`: The class to instantiate
+- `source`: pickle bytes, file-like object, or Path
+- `max_size`: Maximum allowed size for bytes input (default: 10MB)
+
+**Returns:**
+- An instance of `cls`
+
+**Security:** Only allows safe built-in types and `@lodum`-decorated classes. Blocks dangerous modules like `os`, `sys`, and `subprocess`.
+
+**Example:**
+
+```python
+from lodum import lodum, pickle
+from pathlib import Path
+
+@lodum
+class User:
+    name: str
+    age: int
+    metadata: dict[str, str]
+
+# Load from bytes
+pickle_bytes = b'...'
+user = pickle.load(User, pickle_bytes)
+print(f"{user.name}, age {user.age}")
+
+# Load from file
+user = pickle.load(User, Path("user.pkl"))
+```
+
+### loads()
+
+```python
+pickle.loads(cls: Type[T], data: bytes, **kwargs) -> T
+```
+
+Legacy alias for `load(cls, source)`. Provided for compatibility.
+
+## SafeUnpickler Security
+
+The `SafeUnpickler` class provides critical security protections:
+
+### Blocked Modules
+
+These dangerous modules are blocked:
+- `os` - Operating system operations
+- `sys` - System operations
+- `subprocess` - Process execution
+- Any module containing these strings
+
+### Allowed Built-in Types
+
+Only these safe built-in types are allowed:
+- Primitives: `int`, `float`, `str`, `bool`, `bytes`, `complex`
+- Collections: `list`, `tuple`, `dict`, `set`, `frozenset`
+- Utilities: `bytearray`, `NoneType`, `type`
+
+### Allowed Standard Library
+
+These standard library classes are allowed:
+- `collections.defaultdict`
+- `collections.OrderedDict`
+- `collections.Counter`
+- `array.array`
+
+### Lodum Classes
+
+Any class decorated with `@lodum` is automatically allowed.
+
+### Security Example
+
+```python
+from lodum import pickle
+import io
+
+# Attempting to unpickle malicious code will fail
+malicious_pickle = b"""cos
+system
+(S'echo HACKED'
+tR."""
+
+try:
+    # This will raise UnpicklingError
+    pickle.load(object, io.BytesIO(malicious_pickle))
+except Exception as e:
+    print(f"Blocked: {e}")
+    # Blocked: Unsafe module 'os' is forbidden.
+```
+
+## ValidationDumper
+
+Before pickling, Lodum validates the object structure using `ValidationDumper`:
+
+```python
+from lodum import lodum, pickle
+
+@lodum
+class Safe:
+    value: int
+
+class Unsafe:
+    value: int
+
+safe = Safe(value=42)
+unsafe = Unsafe(value=42)
+
+# This works - Safe is decorated with @lodum
+pickle.dump(safe)
+
+# This fails - Unsafe is not decorated
+try:
+    pickle.dump(unsafe)
+except AttributeError as e:
+    print(f"Validation failed: {e}")
+```
+
+## Protocol Versions
+
+Pickle supports multiple protocol versions. Use higher protocols for better performance:
+
+```python
+from lodum import lodum, pickle
+
+@lodum
+class Data:
+    values: list[int]
+
+data = Data(values=list(range(1000)))
+
+# Protocol 5 (Python 3.8+) - fastest, supports large objects
+pickle_v5 = pickle.dump(data, protocol=5)
+
+# Protocol 4 (Python 3.4+) - good performance
+pickle_v4 = pickle.dump(data, protocol=4)
+
+# Default protocol (recommended)
+pickle_default = pickle.dump(data)
+
+print(f"Protocol 5 size: {len(pickle_v5)}")
+print(f"Protocol 4 size: {len(pickle_v4)}")
+print(f"Default size: {len(pickle_default)}")
+```
+
+## When to Use Pickle
+
+### Good Use Cases
+
+1. **Internal Python applications**: Where data never leaves your Python ecosystem
+2. **Caching**: Temporary storage of Python objects
+3. **IPC**: Communication between trusted Python processes
+4. **Development**: Quick serialization during development
+
+```python
+from lodum import lodum, pickle
+import tempfile
+
+@lodum
+class CacheEntry:
+    key: str
+    value: dict[str, int]
+    timestamp: int
+
+# Simple cache implementation
+def save_cache(entry: CacheEntry, cache_file: str):
+    pickle.dump(entry, Path(cache_file))
+
+def load_cache(cache_file: str) -> CacheEntry:
+    return pickle.load(CacheEntry, Path(cache_file))
+```
+
+### Avoid Pickle For
+
+1. **Network protocols**: Use JSON, MessagePack, or CBOR instead
+2. **Long-term storage**: Pickle is not forward/backward compatible
+3. **Cross-language**: Pickle is Python-specific
+4. **Untrusted data**: Even SafeUnpickler has limits
+5. **Public APIs**: Use standard formats like JSON
+
+## Performance Characteristics
+
+Pickle offers excellent performance for Python objects:
+
+```python
+from lodum import lodum, pickle, json, msgpack
+import time
+
+@lodum
+class ComplexData:
+    lists: list[list[int]]
+    dicts: dict[str, dict[str, str]]
+    nested: list[dict[str, list[int]]]
+
+data = ComplexData(
+    lists=[[i for i in range(100)] for _ in range(100)],
+    dicts={f"key{i}": {f"inner{j}": f"value{j}" for j in range(10)} for i in range(100)},
+    nested=[{f"k{i}": [1, 2, 3]} for i in range(1000)]
+)
+
+# Benchmark serialization
+start = time.time()
+pickle_data = pickle.dump(data)
+pickle_time = time.time() - start
+
+start = time.time()
+json_data = json.dump(data)
+json_time = time.time() - start
+
+start = time.time()
+msgpack_data = msgpack.dump(data)
+msgpack_time = time.time() - start
+
+print(f"Pickle: {pickle_time*1000:.2f}ms, {len(pickle_data)} bytes")
+print(f"JSON: {json_time*1000:.2f}ms, {len(json_data)} bytes")
+print(f"MessagePack: {msgpack_time*1000:.2f}ms, {len(msgpack_data)} bytes")
+```
+
+## Migration from Standard Pickle
+
+If you're migrating from standard pickle:
+
+```python
+# Before (UNSAFE!)
+import pickle
+
+with open('data.pkl', 'wb') as f:
+    pickle.dump(my_object, f)
+
+with open('data.pkl', 'rb') as f:
+    loaded = pickle.load(f)  # DANGEROUS!
+
+# After (SAFE with Lodum)
+from lodum import lodum, pickle
+from pathlib import Path
+
+@lodum  # Add decorator to your class
+class MyClass:
+    # ... fields ...
+    pass
+
+# Dumping is similar
+pickle.dump(my_object, Path('data.pkl'))
+
+# Loading requires class and uses SafeUnpickler
+loaded = pickle.load(MyClass, Path('data.pkl'))
+```
+
+## Security Best Practices
+
+1. **Always use SafeUnpickler**: Never use standard `pickle.load()`
+2. **Validate sources**: Only unpickle data from trusted sources
+3. **Use size limits**: Set appropriate `max_size` values
+4. **Prefer other formats**: Use JSON/MessagePack for untrusted data
+5. **Regular updates**: Keep Lodum updated for security patches
+6. **Audit allowed types**: Review `SafeUnpickler.find_class()` for your needs
+
+```python
+from lodum import pickle
+
+# Good: Controlled size limit
+data = pickle.load(MyClass, untrusted_data, max_size=1024*1024)  # 1MB limit
+
+# Good: Known source
+data = pickle.load(MyClass, Path('/trusted/internal/cache.pkl'))
+
+# Bad: Unlimited size from untrusted source
+# data = pickle.load(MyClass, untrusted_data, max_size=float('inf'))
+```

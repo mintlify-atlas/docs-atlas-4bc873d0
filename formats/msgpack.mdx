@@ -1,0 +1,247 @@
+---
+title: MessagePack Format
+description: MessagePack serialization and deserialization with Lodum
+---
+
+# MessagePack Format
+
+Lodum provides MessagePack support for efficient binary serialization. MessagePack is significantly smaller and faster than JSON while maintaining similar simplicity.
+
+## Installation
+
+MessagePack support requires the `msgpack` library:
+
+```bash
+pip install lodum[msgpack]
+```
+
+## API Reference
+
+### dump()
+
+```python
+from lodum import msgpack
+
+msgpack.dump(obj: Any, target: Optional[Union[IO[bytes], Path]] = None, **kwargs) -> Optional[bytes]
+```
+
+Encodes a Python object to MessagePack.
+
+**Parameters:**
+- `obj`: The object to encode (must be a `@lodum`-decorated class)
+- `target`: Optional file-like object or Path to write to
+- `**kwargs`: Additional arguments for `msgpack.packb`
+
+**Returns:**
+- The MessagePack bytes if `target` is None, otherwise None
+
+**Note:** `use_bin_type=True` is set by default for proper binary handling.
+
+**Example:**
+
+```python
+from lodum import lodum, msgpack
+from pathlib import Path
+
+@lodum
+class Message:
+    id: int
+    content: str
+    data: bytes
+
+msg = Message(id=123, content="Hello", data=b"\x00\x01\x02")
+
+# Serialize to bytes
+msgpack_bytes = msgpack.dump(msg)
+print(len(msgpack_bytes))  # Much smaller than JSON
+
+# Serialize to file
+msgpack.dump(msg, Path("message.msgpack"))
+```
+
+### dumps()
+
+```python
+msgpack.dumps(obj: Any, **kwargs) -> bytes
+```
+
+Legacy alias for `dump(obj)`. Provided for compatibility.
+
+### load()
+
+```python
+msgpack.load(
+    cls: Type[T],
+    source: Union[bytes, IO[bytes], Path],
+    max_size: int = DEFAULT_MAX_SIZE
+) -> T
+```
+
+Decodes MessagePack from bytes, stream, or file into a Python object.
+
+**Parameters:**
+- `cls`: The class to instantiate
+- `source`: MessagePack bytes, file-like object, or Path
+- `max_size`: Maximum allowed size for bytes input (default: 10MB)
+
+**Returns:**
+- An instance of `cls`
+
+**Example:**
+
+```python
+from lodum import lodum, msgpack
+from pathlib import Path
+
+@lodum
+class Message:
+    id: int
+    content: str
+    data: bytes
+
+# Load from bytes
+msgpack_bytes = b'\x83\xa2id{\xa7content\xa5Hello\xa4data\xc4\x03\x00\x01\x02'
+msg = msgpack.load(Message, msgpack_bytes)
+print(f"Message {msg.id}: {msg.content}")
+
+# Load from file
+msg = msgpack.load(Message, Path("message.msgpack"))
+```
+
+### loads()
+
+```python
+msgpack.loads(cls: Type[T], packed_bytes: bytes, **kwargs) -> T
+```
+
+Legacy alias for `load(cls, source)`. Provided for compatibility.
+
+### stream()
+
+```python
+msgpack.stream(cls: Type[T], source: Union[IO[bytes], Path]) -> Iterator[T]
+```
+
+Lazily decodes a stream of MessagePack objects. Supports concatenated MessagePack objects (ND-MessagePack style).
+
+**Parameters:**
+- `cls`: The class to instantiate for each item
+- `source`: A binary stream, file-like object, or Path
+
+**Returns:**
+- An iterator yielding instances of `cls`
+
+**Example:**
+
+```python
+from lodum import lodum, msgpack
+from pathlib import Path
+
+@lodum
+class Message:
+    id: int
+    content: str
+
+# messages.msgpack contains concatenated MessagePack objects
+for msg in msgpack.stream(Message, Path("messages.msgpack")):
+    print(f"Message {msg.id}: {msg.content}")
+```
+
+## Binary Data Handling
+
+MessagePack natively supports binary data, which is one of its key advantages over JSON:
+
+```python
+from lodum import lodum, msgpack
+
+@lodum
+class Packet:
+    header: str
+    payload: bytes
+
+pkt = Packet(header="DATA", payload=b"\x00\x01\x02\x03\x04\x05")
+
+# Binary data is stored efficiently, not base64-encoded
+packed = msgpack.dump(pkt)
+
+# Restore binary data exactly
+restored = msgpack.load(Packet, packed)
+assert restored.payload == b"\x00\x01\x02\x03\x04\x05"
+```
+
+## Performance Benefits
+
+MessagePack offers significant advantages over text formats:
+
+1. **Size**: Typically 30-50% smaller than JSON
+2. **Speed**: 2-3x faster serialization/deserialization
+3. **Binary support**: No base64 encoding needed for bytes
+4. **Type preservation**: Better integer and float precision
+
+**Example comparison:**
+
+```python
+from lodum import lodum, json, msgpack
+import sys
+
+@lodum
+class Data:
+    values: list[int]
+    metadata: dict[str, str]
+
+data = Data(
+    values=list(range(1000)),
+    metadata={"source": "sensor", "version": "1.0"}
+)
+
+json_size = len(json.dump(data))
+msgpack_size = len(msgpack.dump(data))
+
+print(f"JSON: {json_size} bytes")
+print(f"MessagePack: {msgpack_size} bytes")
+print(f"Savings: {100 * (1 - msgpack_size/json_size):.1f}%")
+# JSON: 4532 bytes
+# MessagePack: 2891 bytes
+# Savings: 36.2%
+```
+
+## ND-MessagePack Streaming
+
+MessagePack supports newline-delimited (ND) streaming for processing large datasets:
+
+```python
+from lodum import lodum, msgpack
+from pathlib import Path
+
+@lodum
+class Record:
+    id: int
+    value: float
+
+# Write multiple records
+with open("records.msgpack", "wb") as f:
+    for i in range(1000):
+        rec = Record(id=i, value=i * 1.5)
+        data = msgpack.dump(rec)
+        f.write(data)
+
+# Stream read without loading all into memory
+for record in msgpack.stream(Record, Path("records.msgpack")):
+    if record.value > 1000:
+        print(f"Record {record.id}: {record.value}")
+```
+
+## Use Cases
+
+MessagePack is ideal for:
+- High-performance APIs
+- Binary protocols
+- Data streaming
+- Mobile applications (reduced bandwidth)
+- IoT and embedded systems
+- Caching layers
+
+MessagePack is less suitable for:
+- Human-readable configuration
+- Web browsers without additional libraries
+- Systems requiring text-based debugging

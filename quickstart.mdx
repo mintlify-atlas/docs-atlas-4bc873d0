@@ -1,80 +1,354 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick start
+description: Get started with lodum in 5 minutes
 ---
 
-## Get started in three steps
+This guide will walk you through the basics of using lodum to serialize and deserialize Python objects.
 
-Get your documentation site running locally and make your first customization.
+## Define your data structure
 
-### Step 1: Set up your local environment
+Use the `@lodum` decorator on your class. You can use standard `__init__` methods or `dataclasses`. Make sure to include type hints, as lodum uses them to understand your data.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<CodeGroup>
 
-### Step 2: Deploy your changes
+```python Dataclass style
+from lodum import lodum
+from dataclasses import dataclass
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+@lodum
+@dataclass
+class User:
+    name: str
+    age: int
+    is_active: bool
+```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+```python __init__ style
+from lodum import lodum
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+@lodum
+class User:
+    def __init__(self, name: str, age: int, is_active: bool):
+        self.name = name
+        self.age = age
+        self.is_active = is_active
+```
 
-### Step 3: Go live
+</CodeGroup>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+<Warning>
+  Type hints are required. lodum uses them to generate optimized serialization code.
+</Warning>
+
+## Encode to JSON
+
+Use the `json.dumps()` function to convert an instance of your class into a JSON string:
+
+```python
+from lodum import json
+
+user = User(name="Alex", age=30, is_active=True)
+
+# Encode the object to a JSON string
+json_string = json.dumps(user)
+print(json_string)
+# Output: {"name": "Alex", "age": 30, "is_active": true}
+```
+
+## Decode from JSON
+
+Use the `json.loads()` function to decode a JSON string back to a Python object:
+
+```python
+json_data = '{"name": "Barbara", "age": 25, "is_active": false}'
+
+# Decode the JSON string to a User object
+barbara = json.loads(User, json_data)
+
+print(f"Name: {barbara.name}, Age: {barbara.age}, Active: {barbara.is_active}")
+# Output: Name: Barbara, Age: 25, Active: False
+```
+
+<Note>
+  The first argument to `loads()` is the class type. This enables full type validation and ensures you get the correct object type back.
+</Note>
+
+## Multiple formats
+
+You can easily switch between formats. lodum supports JSON, YAML, TOML, MessagePack, CBOR, BSON, and Pickle:
+
+```python
+from lodum import json, yaml, toml
+
+user = User(name="Alex", age=30, is_active=True)
+
+# Encode to different formats
+json_output = json.dumps(user)
+yaml_output = yaml.dumps(user)
+toml_output = toml.dumps(user)
+
+print(yaml_output)
+# Output:
+# name: Alex
+# age: 30
+# is_active: true
+
+# Decode from YAML
+user_from_yaml = yaml.loads(User, yaml_output)
+```
+
+## Field customization
+
+Customize individual fields using the `field()` function:
+
+```python
+from lodum import lodum, field, json
+
+@lodum
+class User:
+    def __init__(
+        self,
+        # Rename 'user_id' to 'id' in the output
+        user_id: int = field(rename="id", default=0),
+        
+        # This field is required
+        email: str = "",
+        
+        # This field will not be included in the output
+        password_hash: str = field(skip_serializing=True, default=""),
+        
+        # If 'prefs' is missing on decoding, it will default to an empty dict
+        prefs: dict = field(default_factory=dict),
+    ):
+        self.user_id = user_id
+        self.email = email
+        self.password_hash = password_hash
+        self.prefs = prefs
+
+# Encode a user
+user = User(email="name@example.com", user_id=123, password_hash="secret")
+print(json.dumps(user))
+# Output: {"id": 123, "email": "name@example.com", "prefs": {}}
+
+# Decode a user
+user_data = '{"id": 456, "email": "test@example.com"}'
+user = json.loads(User, user_data)
+print(user.user_id)  # 456
+print(user.prefs)    # {}
+```
+
+### Supported field options
+
+<ResponseField name="rename" type="str">
+  Use a different name for the field in the output
+</ResponseField>
+
+<ResponseField name="skip_serializing" type="bool">
+  Exclude the field from the output
+</ResponseField>
+
+<ResponseField name="default" type="Any">
+  Provide a default value if the field is missing during decoding
+</ResponseField>
+
+<ResponseField name="default_factory" type="Callable[[], Any]">
+  Provide a zero-argument function to call for a default value
+</ResponseField>
+
+<ResponseField name="serializer" type="Callable[[Any], Any]">
+  A function to call to encode the field's value
+</ResponseField>
+
+<ResponseField name="deserializer" type="Callable[[Any], Any]">
+  A function to call to decode the field's value
+</ResponseField>
+
+<ResponseField name="validate" type="Callable[[Any], None] | list">
+  A function or list of functions to validate the field's value during decoding
+</ResponseField>
+
+## Validation
+
+lodum includes built-in validators to ensure your data meets specific criteria:
+
+```python
+from lodum import lodum, field, json
+from lodum.validators import Range, Length, Match, OneOf
+
+@lodum
+class Product:
+    def __init__(
+        self,
+        name: str = field(validate=Length(min=3, max=50)),
+        price: float = field(validate=Range(min=0)),
+        category: str = field(validate=OneOf(["electronics", "books", "clothing"])),
+        code: str = field(validate=Match(r"^[A-Z]{2}-\d{4}$"))
+    ):
+        self.name = name
+        self.price = price
+        self.category = category
+        self.code = code
+
+# This will raise a DeserializationError
+try:
+    json.loads(
+        Product, 
+        '{"name": "A", "price": -10, "category": "food", "code": "abc"}'
+    )
+except Exception as e:
+    print(f"Validation failed: {e}")
+```
+
+### Built-in validators
+
+<ResponseField name="Range" type="class">
+  Validates that a value is within a specified range
+  
+  ```python
+  Range(min=0, max=100)
+  Range(min=0)  # No maximum
+  ```
+</ResponseField>
+
+<ResponseField name="Length" type="class">
+  Validates that a collection has a length within a specified range
+  
+  ```python
+  Length(min=3, max=50)
+  Length(min=1)  # At least 1 item
+  ```
+</ResponseField>
+
+<ResponseField name="Match" type="class">
+  Validates that a string matches a regular expression pattern
+  
+  ```python
+  Match(r"^[A-Z]{2}-\d{4}$")
+  ```
+</ResponseField>
+
+<ResponseField name="OneOf" type="class">
+  Validates that a value is one of a set of allowed values
+  
+  ```python
+  OneOf(["small", "medium", "large"])
+  ```
+</ResponseField>
+
+## Error reporting
+
+lodum provides detailed path information when deserialization fails:
+
+```python
+from lodum import lodum, json
+from lodum.exception import DeserializationError
+
+@lodum
+class User:
+    def __init__(self, name: str, age: int):
+        self.name = name
+        self.age = age
+
+json_data = '{"name": "Alex", "age": "not_an_int"}'
+
+try:
+    json.loads(User, json_data)
+except DeserializationError as e:
+    print(e)
+    # Output: Error at age: Expected int, got str
+```
+
+The path tracking works through nested objects, lists, and dictionaries (e.g., `root.users[2].id`).
+
+## Working with dictionaries
+
+Convert objects to and from plain Python dictionaries:
+
+```python
+import lodum
+
+@lodum
+class User:
+    def __init__(self, user_id: int = lodum.field(rename="id"), name: str = ""):
+        self.user_id = user_id
+        self.name = name
+
+user = User(user_id=1, name="Alex")
+
+# Convert to dictionary
+data = lodum.asdict(user)
+print(data)
+# Output: {"id": 1, "name": "Alex"}
+
+# Convert from dictionary
+new_user = lodum.fromdict(User, {"id": 2, "name": "Sam"})
+print(new_user.user_id)  # 2
+```
+
+## JSON schema generation
+
+Generate standard JSON Schema for any `@lodum`-decorated class:
+
+```python
+import lodum
+import json
+
+@lodum
+class User:
+    def __init__(self, id: int, name: str):
+        self.id = id
+        self.name = name
+
+# Generate the schema
+schema = lodum.schema(User)
+
+print(json.dumps(schema, indent=2))
+# Output:
+# {
+#   "type": "object",
+#   "properties": {
+#     "id": { "type": "integer" },
+#     "name": { "type": "string" }
+#   },
+#   "required": ["id", "name"]
+# }
+```
+
+This is particularly useful for documenting your data models or for use with LLM tool definitions.
+
+## Streaming serialization
+
+For extremely large datasets, lodum supports O(1) memory streaming serialization:
+
+```python
+import sys
+from lodum import lodum, json
+
+@lodum
+class LargeData:
+    def __init__(self, items: list[int]):
+        self.items = items
+
+# Serialize a large object directly to stdout (or a file)
+data = LargeData(items=list(range(1000000)))
+json.dump(data, sys.stdout)
+```
+
+For loading, `json.stream()` provides lazy, iterator-based deserialization of JSON arrays.
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="API reference" icon="book" href="https://webmaven.github.io/lodum/api_reference">
+    Explore the complete API documentation
+  </Card>
+  <Card title="Migration guide" icon="arrow-right" href="https://webmaven.github.io/lodum/User%20Guide/Migration">
+    Migrating from another library?
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="https://webmaven.github.io/lodum/Technical%20Specs/Architecture">
+    Learn how lodum works under the hood
+  </Card>
+  <Card title="Performance" icon="gauge" href="https://webmaven.github.io/lodum/User%20Guide/Performance">
+    See detailed benchmark results
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

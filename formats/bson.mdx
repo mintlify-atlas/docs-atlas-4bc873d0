@@ -1,0 +1,320 @@
+---
+title: BSON Format
+description: BSON serialization and deserialization with Lodum
+---
+
+# BSON Format
+
+Lodum provides BSON (Binary JSON) support for MongoDB-compatible binary serialization. BSON is designed for efficient storage and traversal of documents.
+
+## Installation
+
+BSON support requires the `pymongo` library:
+
+```bash
+pip install lodum[bson]
+```
+
+## API Reference
+
+### dump()
+
+```python
+from lodum import bson
+
+bson.dump(obj: Any, target: Optional[Union[IO[bytes], Path]] = None, **kwargs) -> Optional[bytes]
+```
+
+Encodes a Python object to BSON.
+
+**Parameters:**
+- `obj`: The object to encode (must be a `@lodum`-decorated class)
+- `target`: Optional file-like object or Path to write to
+- `**kwargs`: Additional arguments for `bson.encode`
+
+**Returns:**
+- The BSON bytes if `target` is None, otherwise None
+
+**Note:** BSON requires a dictionary at the root level. Primitive values are automatically wrapped in `{"_v": value}`.
+
+**Example:**
+
+```python
+from lodum import lodum, bson
+from pathlib import Path
+
+@lodum
+class Document:
+    title: str
+    content: str
+    views: int
+    data: bytes
+
+doc = Document(
+    title="Hello World",
+    content="Introduction to Lodum",
+    views=100,
+    data=b"\x00\x01\x02"
+)
+
+# Serialize to bytes
+bson_bytes = bson.dump(doc)
+print(f"BSON size: {len(bson_bytes)} bytes")
+
+# Serialize to file
+bson.dump(doc, Path("document.bson"))
+```
+
+### dumps()
+
+```python
+bson.dumps(obj: Any, **kwargs) -> bytes
+```
+
+Legacy alias for `dump(obj)`. Provided for compatibility.
+
+### load()
+
+```python
+bson.load(
+    cls: Type[T],
+    source: Union[bytes, IO[bytes], Path],
+    max_size: int = DEFAULT_MAX_SIZE
+) -> T
+```
+
+Decodes BSON from bytes, stream, or file into a Python object.
+
+**Parameters:**
+- `cls`: The class to instantiate
+- `source`: BSON bytes, file-like object, or Path
+- `max_size`: Maximum allowed size for bytes input (default: 10MB)
+
+**Returns:**
+- An instance of `cls`
+
+**Example:**
+
+```python
+from lodum import lodum, bson
+from pathlib import Path
+
+@lodum
+class Document:
+    title: str
+    content: str
+    views: int
+    data: bytes
+
+# Load from bytes
+bson_bytes = b'...'
+doc = bson.load(Document, bson_bytes)
+print(f"{doc.title}: {doc.views} views")
+
+# Load from file
+doc = bson.load(Document, Path("document.bson"))
+```
+
+### loads()
+
+```python
+bson.loads(cls: Type[T], bson_bytes: bytes, **kwargs) -> T
+```
+
+Legacy alias for `load(cls, source)`. Provided for compatibility.
+
+### stream()
+
+```python
+bson.stream(cls: Type[T], source: Union[IO[bytes], Path]) -> Iterator[T]
+```
+
+Lazily decodes a stream of BSON objects. Supports concatenated BSON documents.
+
+**Parameters:**
+- `cls`: The class to instantiate for each item
+- `source`: A binary stream, file-like object, or Path
+
+**Returns:**
+- An iterator yielding instances of `cls`
+
+**Example:**
+
+```python
+from lodum import lodum, bson
+from pathlib import Path
+
+@lodum
+class Document:
+    title: str
+    views: int
+
+# documents.bson contains concatenated BSON documents
+for doc in bson.stream(Document, Path("documents.bson")):
+    print(f"{doc.title}: {doc.views}")
+```
+
+## Binary Data Handling
+
+BSON natively supports binary data with multiple binary subtypes:
+
+```python
+from lodum import lodum, bson
+
+@lodum
+class Attachment:
+    filename: str
+    content_type: str
+    data: bytes
+
+attach = Attachment(
+    filename="image.png",
+    content_type="image/png",
+    data=b"\x89PNG\r\n\x1a\n"
+)
+
+# Binary data is stored efficiently with BSON binary type
+encoded = bson.dump(attach)
+
+# Restore binary data exactly
+restored = bson.load(Attachment, encoded)
+assert restored.data == attach.data
+```
+
+## MongoDB Integration
+
+BSON is the native format for MongoDB, making Lodum ideal for MongoDB workflows:
+
+```python
+from lodum import lodum, bson
+from pymongo import MongoClient
+
+@lodum
+class User:
+    username: str
+    email: str
+    age: int
+
+# Create a user
+user = User(username="alice", email="alice@example.com", age=30)
+
+# Convert to BSON-compatible dict for MongoDB
+from lodum.json import JsonDumper
+from lodum.internal import dump as dump_internal
+
+dumper = JsonDumper()
+user_dict = dump_internal(user, dumper)
+
+# Insert into MongoDB
+client = MongoClient()
+db = client.myapp
+db.users.insert_one(user_dict)
+
+# Query from MongoDB and load
+user_data = db.users.find_one({"username": "alice"})
+from lodum.json import JsonLoader
+from lodum.internal import load as load_internal
+
+restored_user = load_internal(User, JsonLoader(user_data))
+print(f"{restored_user.username}: {restored_user.email}")
+```
+
+## BSON Document Structure
+
+BSON requires a document (dictionary) at the root level. Lodum handles this automatically:
+
+```python
+from lodum import lodum, bson
+
+@lodum
+class Config:
+    setting: str
+
+# Lodum objects become BSON documents naturally
+config = Config(setting="value")
+encoded = bson.dump(config)
+# Encoded as: {"setting": "value"}
+
+# Primitive types are wrapped
+value = 42
+encoded = bson.dump(value)
+# Encoded as: {"_v": 42}
+```
+
+## Type Preservation
+
+BSON provides good type preservation with some MongoDB-specific types:
+
+```python
+from lodum import lodum, bson
+
+@lodum
+class Record:
+    count: int
+    ratio: float
+    active: bool
+    data: bytes
+
+rec = Record(count=100, ratio=3.14, active=True, data=b"\x01\x02")
+
+encoded = bson.dump(rec)
+restored = bson.load(Record, encoded)
+
+assert restored.count == rec.count
+assert restored.ratio == rec.ratio
+assert restored.active == rec.active
+assert restored.data == rec.data
+```
+
+## Streaming Large Collections
+
+BSON's streaming support enables efficient processing of large datasets:
+
+```python
+from lodum import lodum, bson
+from pathlib import Path
+
+@lodum
+class Transaction:
+    id: int
+    amount: float
+    status: str
+
+# Write large transaction log
+with open("transactions.bson", "wb") as f:
+    for i in range(10_000):
+        txn = Transaction(id=i, amount=i * 10.5, status="completed")
+        f.write(bson.dump(txn))
+
+# Process without loading all into memory
+total = 0.0
+for txn in bson.stream(Transaction, Path("transactions.bson")):
+    if txn.status == "completed":
+        total += txn.amount
+
+print(f"Total: ${total:,.2f}")
+```
+
+## BSON Limitations
+
+BSON has some constraints to be aware of:
+
+1. **Document size**: Limited to 16MB per document in MongoDB
+2. **Key names**: Cannot contain null characters or start with `$` (MongoDB restriction)
+3. **Nesting depth**: Practical limits on nested documents (MongoDB: 100 levels)
+4. **Field order**: BSON preserves field order, unlike standard JSON
+
+## Use Cases
+
+BSON is ideal for:
+- MongoDB integration
+- Document-oriented storage
+- Binary data with metadata
+- Traversable binary formats
+- Applications requiring field order preservation
+
+BSON is less suitable for:
+- Non-MongoDB applications (consider CBOR or MessagePack)
+- Maximum space efficiency (BSON includes type information)
+- Very large documents (>16MB)
+- Network protocols (more overhead than MessagePack/CBOR)

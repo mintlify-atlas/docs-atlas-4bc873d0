@@ -1,0 +1,349 @@
+---
+title: "asdict() & fromdict()"
+description: "Convert between Python objects and plain dictionaries"
+---
+
+## Overview
+
+`asdict()` and `fromdict()` provide a simple API for converting lodum-enabled objects to and from plain Python data structures (dictionaries, lists, primitives). These functions are useful when you need to work with raw data structures without committing to a specific serialization format.
+
+## asdict()
+
+Recursively converts a lodum-enabled object into plain Python primitives (dict, list, etc.).
+
+### Signature
+
+```python
+def asdict(obj: Any) -> Any
+```
+
+### Parameters
+
+<ParamField path="obj" type="Any">
+  The object to convert. Can be a lodum-enabled class instance, a collection containing lodum objects, or any supported type.
+</ParamField>
+
+### Returns
+
+Plain Python data structures:
+- Lodum objects → `dict`
+- Lists/sequences → `list`
+- Dictionaries → `dict`
+- Primitives → unchanged (`int`, `str`, `float`, `bool`, `None`)
+- Enums → their `.value`
+- Datetimes → ISO 8601 strings
+- Other types → format-specific representations
+
+### Examples
+
+#### Basic Usage
+
+```python
+from lodum import lodum, asdict
+
+@lodum
+class User:
+    def __init__(self, name: str, age: int):
+        self.name = name
+        self.age = age
+
+user = User(name="Alice", age=30)
+data = asdict(user)
+# {'name': 'Alice', 'age': 30}
+```
+
+#### Nested Objects
+
+```python
+from lodum import lodum, asdict
+from typing import List
+
+@lodum
+class Address:
+    def __init__(self, street: str, city: str):
+        self.street = street
+        self.city = city
+
+@lodum
+class Person:
+    def __init__(self, name: str, address: Address):
+        self.name = name
+        self.address = address
+
+person = Person(
+    name="Bob",
+    address=Address(street="123 Main St", city="Boston")
+)
+
+data = asdict(person)
+# {
+#     'name': 'Bob',
+#     'address': {
+#         'street': '123 Main St',
+#         'city': 'Boston'
+#     }
+# }
+```
+
+#### With Field Renaming
+
+```python
+from lodum import lodum, field, asdict
+
+@lodum
+class Config:
+    def __init__(
+        self,
+        api_key: str = field(rename="apiKey"),
+        max_retries: int = field(rename="maxRetries"),
+    ):
+        self.api_key = api_key
+        self.max_retries = max_retries
+
+config = Config(api_key="secret", max_retries=3)
+data = asdict(config)
+# {'apiKey': 'secret', 'maxRetries': 3}
+```
+
+#### With Collections
+
+```python
+from lodum import lodum, asdict
+from typing import List
+
+@lodum
+class Item:
+    def __init__(self, id: int, name: str):
+        self.id = id
+        self.name = name
+
+items = [
+    Item(id=1, name="First"),
+    Item(id=2, name="Second"),
+]
+
+data = asdict(items)
+# [
+#     {'id': 1, 'name': 'First'},
+#     {'id': 2, 'name': 'Second'}
+# ]
+```
+
+## fromdict()
+
+Hydrates a lodum-enabled class from a dictionary or other plain Python primitives.
+
+### Signature
+
+```python
+def fromdict(cls: Type[T], data: Any) -> T
+```
+
+### Parameters
+
+<ParamField path="cls" type="Type[T]">
+  The lodum-enabled class to instantiate. Must be decorated with `@lodum`.
+</ParamField>
+
+<ParamField path="data" type="Any">
+  The data to deserialize. Typically a dictionary, but can be any supported primitive or collection.
+</ParamField>
+
+### Returns
+
+An instance of the specified class `T`, fully hydrated with the provided data.
+
+### Raises
+
+- `DeserializationError` - If the data doesn't match the expected type or structure
+- `ValueError` - If validation fails (when using `field(validate=...)`)
+
+### Examples
+
+#### Basic Usage
+
+```python
+from lodum import lodum, fromdict
+
+@lodum
+class User:
+    def __init__(self, name: str, age: int):
+        self.name = name
+        self.age = age
+
+data = {'name': 'Alice', 'age': 30}
+user = fromdict(User, data)
+# User(name='Alice', age=30)
+```
+
+#### Nested Objects
+
+```python
+from lodum import lodum, fromdict
+from typing import List
+
+@lodum
+class Child:
+    def __init__(self, name: str):
+        self.name = name
+
+@lodum
+class Parent:
+    def __init__(self, name: str, children: List[Child]):
+        self.name = name
+        self.children = children
+
+data = {
+    'name': 'Alice',
+    'children': [
+        {'name': 'Bob'},
+        {'name': 'Charlie'}
+    ]
+}
+
+parent = fromdict(Parent, data)
+# Parent with 2 Child instances
+assert parent.children[0].name == 'Bob'
+assert isinstance(parent.children[0], Child)
+```
+
+#### With Renamed Fields
+
+```python
+from lodum import lodum, field, fromdict
+
+@lodum
+class Config:
+    def __init__(
+        self,
+        api_key: str = field(rename="apiKey"),
+        max_retries: int = field(rename="maxRetries"),
+    ):
+        self.api_key = api_key
+        self.max_retries = max_retries
+
+data = {'apiKey': 'secret', 'maxRetries': 3}
+config = fromdict(Config, data)
+# Config(api_key='secret', max_retries=3)
+```
+
+#### With Defaults
+
+```python
+from lodum import lodum, field, fromdict
+
+@lodum
+class Settings:
+    def __init__(
+        self,
+        host: str,
+        port: int = field(default=8080),
+    ):
+        self.host = host
+        self.port = port
+
+# Port is optional in the data
+data = {'host': 'localhost'}
+settings = fromdict(Settings, data)
+# Settings(host='localhost', port=8080)
+```
+
+#### With Validation
+
+```python
+from lodum import lodum, field, fromdict
+from lodum.exception import DeserializationError
+
+def validate_positive(value: int) -> None:
+    if value <= 0:
+        raise ValueError("Must be positive")
+
+@lodum
+class Product:
+    def __init__(
+        self,
+        price: float = field(validate=validate_positive),
+    ):
+        self.price = price
+
+# Valid data
+product = fromdict(Product, {'price': 10.0})
+# Product(price=10.0)
+
+# Invalid data raises during deserialization
+try:
+    fromdict(Product, {'price': -5.0})
+except ValueError as e:
+    print(e)  # "Must be positive"
+```
+
+## Round-Trip Conversion
+
+These functions are designed to work together:
+
+```python
+from lodum import lodum, asdict, fromdict
+from typing import List
+
+@lodum
+class Note:
+    def __init__(self, title: str, tags: List[str]):
+        self.title = title
+        self.tags = tags
+
+original = Note(title="Meeting", tags=["work", "important"])
+
+# Convert to dict
+data = asdict(original)
+
+# Convert back to object
+restored = fromdict(Note, data)
+
+assert restored.title == original.title
+assert restored.tags == original.tags
+```
+
+## Type Safety
+
+Both functions perform full type validation:
+
+```python
+from lodum import lodum, fromdict
+from lodum.exception import DeserializationError
+
+@lodum
+class Typed:
+    def __init__(self, count: int):
+        self.count = count
+
+# This will raise DeserializationError
+try:
+    fromdict(Typed, {'count': 'not-a-number'})
+except DeserializationError as e:
+    print(e)  # "Expected int, got str"
+```
+
+## Working with Collections
+
+```python
+from lodum import lodum, asdict
+import collections
+
+@lodum
+class Item:
+    def __init__(self, value: int):
+        self.value = value
+
+# Works with UserList, deque, etc.
+my_list = collections.deque([Item(1), Item(2)])
+data = asdict(my_list)
+# [{'value': 1}, {'value': 2}]  # Plain list
+assert type(data) is list
+```
+
+## See Also
+
+- [@lodum](/api/lodum-decorator) - Enable serialization for classes
+- [field()](/api/field) - Configure field-level behavior
+- [JSON Format](/formats/json) - Serialize to/from JSON
+- [YAML Format](/formats/yaml) - Serialize to/from YAML

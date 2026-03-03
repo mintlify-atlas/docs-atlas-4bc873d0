@@ -1,0 +1,231 @@
+---
+title: JSON Format
+description: JSON serialization and deserialization with Lodum
+---
+
+# JSON Format
+
+Lodum provides comprehensive JSON support with both in-memory and streaming capabilities.
+
+## Installation
+
+JSON support is built into Lodum core with no additional dependencies required:
+
+```bash
+pip install lodum
+```
+
+For streaming JSON support, install the optional `ijson` dependency:
+
+```bash
+pip install lodum[ijson]
+```
+
+## API Reference
+
+### dump()
+
+```python
+from lodum import json
+
+json.dump(obj: Any, target: Optional[Union[IO[str], Path]] = None, **kwargs) -> Optional[str]
+```
+
+Encodes a Python object to JSON.
+
+**Parameters:**
+- `obj`: The object to encode (must be a `@lodum`-decorated class)
+- `target`: Optional file-like object or Path to write to
+- `**kwargs`: Additional arguments for `json.dump(s)` (e.g., `indent`)
+
+**Returns:**
+- The JSON string if `target` is None, otherwise None
+
+**Note:** If `target` is provided, O(1) streaming is used and some formatting kwargs might be ignored.
+
+**Example:**
+
+```python
+from lodum import lodum, json
+from pathlib import Path
+
+@lodum
+class User:
+    name: str
+    age: int
+
+user = User(name="Alice", age=30)
+
+# Serialize to string
+json_str = json.dump(user, indent=2)
+print(json_str)
+# {
+#   "name": "Alice",
+#   "age": 30
+# }
+
+# Serialize to file
+json.dump(user, Path("user.json"))
+```
+
+### dumps()
+
+```python
+json.dumps(obj: Any, **kwargs) -> str
+```
+
+Legacy alias for `dump(obj)`. Provided for compatibility.
+
+### load()
+
+```python
+json.load(
+    cls: Type[T],
+    source: Union[str, IO[Any], Path],
+    max_size: int = DEFAULT_MAX_SIZE
+) -> T
+```
+
+Decodes JSON from a string, stream, or file into a Python object.
+
+**Parameters:**
+- `cls`: The class to instantiate
+- `source`: JSON string, file-like object, or Path
+- `max_size`: Maximum allowed size for string input (default: 10MB)
+
+**Returns:**
+- An instance of `cls`
+
+**Example:**
+
+```python
+from lodum import lodum, json
+
+@lodum
+class User:
+    name: str
+    age: int
+
+# Load from string
+json_str = '{"name": "Bob", "age": 25}'
+user = json.load(User, json_str)
+print(f"{user.name} is {user.age} years old")
+# Bob is 25 years old
+
+# Load from file
+user = json.load(User, Path("user.json"))
+```
+
+### loads()
+
+```python
+json.loads(cls: Type[T], json_string: str, **kwargs) -> T
+```
+
+Legacy alias for `load(cls, source)`. Provided for compatibility.
+
+### stream()
+
+```python
+json.stream(cls: Type[T], source: Union[IO[bytes], Path]) -> Iterator[T]
+```
+
+Lazily decodes a stream of JSON objects into instances of `cls`. Intended for sources containing a top-level array of objects.
+
+**Parameters:**
+- `cls`: The class to instantiate for each item
+- `source`: A binary stream, file-like object, or Path to a JSON array
+
+**Returns:**
+- An iterator yielding instances of `cls`
+
+**Requires:** `ijson` library (install with `pip install lodum[ijson]`)
+
+**Example:**
+
+```python
+from lodum import lodum, json
+from pathlib import Path
+
+@lodum
+class User:
+    name: str
+    age: int
+
+# users.json contains: [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]
+for user in json.stream(User, Path("users.json")):
+    print(f"{user.name}: {user.age}")
+# Alice: 30
+# Bob: 25
+```
+
+### load_stream()
+
+```python
+json.load_stream(cls: Type[T], stream_io: IO[bytes]) -> Iterator[T]
+```
+
+Legacy alias for `stream(cls, source)`. Provided for compatibility.
+
+### schema()
+
+```python
+json.schema(cls: Type[Any]) -> Dict[str, Any]
+```
+
+Generates a JSON Schema for a given lodum-enabled class.
+
+**Example:**
+
+```python
+from lodum import lodum, json
+
+@lodum
+class User:
+    name: str
+    age: int
+    email: str
+
+schema = json.schema(User)
+print(schema)
+# {'type': 'object', 'properties': {...}, 'required': [...]}
+```
+
+## Binary Data Handling
+
+JSON doesn't natively support binary data. Lodum automatically encodes `bytes` fields using base64:
+
+```python
+from lodum import lodum, json
+
+@lodum
+class Document:
+    name: str
+    data: bytes
+
+doc = Document(name="test", data=b"\x00\x01\x02\x03")
+json_str = json.dump(doc)
+print(json_str)
+# {"name": "test", "data": "AAECAw=="}
+
+# Deserialization automatically decodes base64 back to bytes
+restored = json.load(Document, json_str)
+assert restored.data == b"\x00\x01\x02\x03"
+```
+
+## Streaming Performance
+
+When writing to a file or stream, Lodum uses O(1) memory streaming to handle large objects efficiently:
+
+```python
+from lodum import lodum, json
+from pathlib import Path
+
+@lodum
+class LargeDataset:
+    items: list[dict[str, str]]
+
+# This won't load the entire JSON string into memory
+large_data = LargeDataset(items=[{"id": str(i)} for i in range(1_000_000)])
+json.dump(large_data, Path("large.json"))
+```

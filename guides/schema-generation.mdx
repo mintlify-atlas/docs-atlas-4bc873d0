@@ -1,0 +1,488 @@
+---
+title: JSON Schema Generation
+description: Automatically generate JSON schemas from your Lodum data models for documentation, validation, and LLM tool definitions
+---
+
+## Overview
+
+Lodum can automatically generate standard JSON Schema documents from any `@lodum`-decorated class. This is particularly useful for:
+
+- **API Documentation**: Document your data models
+- **Validation**: Use with JSON Schema validators
+- **LLM Tool Definitions**: Provide structured schemas to language models
+- **Client Generation**: Generate client code from schemas
+
+## Basic Schema Generation
+
+Use `lodum.schema()` to generate a schema for any decorated class:
+
+```python
+import lodum
+import json
+
+@lodum.lodum
+class User:
+    def __init__(self, id: int, name: str):
+        self.id = id
+        self.name = name
+
+# Generate the schema
+schema = lodum.schema(User)
+
+print(json.dumps(schema, indent=2))
+```
+
+**Output:**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": { "type": "integer" },
+    "name": { "type": "string" }
+  },
+  "required": ["id", "name"]
+}
+```
+
+## Type Mappings
+
+Lodum maps Python types to JSON Schema types:
+
+<ResponseField name="int" type="integer">
+  Python `int` → JSON Schema `integer`
+</ResponseField>
+
+<ResponseField name="str" type="string">
+  Python `str` → JSON Schema `string`
+</ResponseField>
+
+<ResponseField name="float" type="number">
+  Python `float` → JSON Schema `number`
+</ResponseField>
+
+<ResponseField name="bool" type="boolean">
+  Python `bool` → JSON Schema `boolean`
+</ResponseField>
+
+<ResponseField name="None" type="null">
+  Python `None` → JSON Schema `null`
+</ResponseField>
+
+<ResponseField name="list" type="array">
+  Python `list[T]` → JSON Schema `array` with `items` of type T
+</ResponseField>
+
+<ResponseField name="dict" type="object">
+  Python `dict[str, T]` → JSON Schema `object` with `additionalProperties` of type T
+</ResponseField>
+
+## Complex Type Schemas
+
+### Optional Fields
+
+```python
+from typing import Optional
+
+@lodum.lodum
+class Person:
+    def __init__(self, name: str, age: Optional[int] = None):
+        self.name = name
+        self.age = age
+
+schema = lodum.schema(Person)
+```
+
+**Output:**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "age": { "type": "integer" }
+  },
+  "required": ["name"]
+}
+```
+
+<Note>
+Fields with defaults are not included in the `required` array.
+</Note>
+
+### Union Types
+
+```python
+from typing import Union
+
+@lodum.lodum
+class FlexibleData:
+    def __init__(self, value: Union[str, int, bool]):
+        self.value = value
+
+schema = lodum.schema(FlexibleData)
+```
+
+**Output:**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "value": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "integer" },
+        { "type": "boolean" }
+      ]
+    }
+  },
+  "required": ["value"]
+}
+```
+
+### List and Set Types
+
+```python
+@lodum.lodum
+class Collection:
+    def __init__(self, items: list[int], unique_items: set[str]):
+        self.items = items
+        self.unique_items = unique_items
+
+schema = lodum.schema(Collection)
+```
+
+**Output:**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": { "type": "integer" }
+    },
+    "unique_items": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    }
+  },
+  "required": ["items", "unique_items"]
+}
+```
+
+### Tuple Types
+
+```python
+from typing import Tuple
+
+@lodum.lodum
+class Point:
+    def __init__(self, coordinates: Tuple[float, float, float]):
+        self.coordinates = coordinates
+
+schema = lodum.schema(Point)
+```
+
+**Output:**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "coordinates": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "number" },
+        { "type": "number" },
+        { "type": "number" }
+      ]
+    }
+  },
+  "required": ["coordinates"]
+}
+```
+
+## Nested Objects
+
+Lodum automatically generates schemas for nested `@lodum` classes:
+
+```python
+@lodum.lodum
+class Address:
+    def __init__(self, street: str, city: str, zipcode: str):
+        self.street = street
+        self.city = city
+        self.zipcode = zipcode
+
+@lodum.lodum
+class Person:
+    def __init__(self, name: str, address: Address):
+        self.name = name
+        self.address = address
+
+schema = lodum.schema(Person)
+```
+
+**Output:**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "address": {
+      "type": "object",
+      "properties": {
+        "street": { "type": "string" },
+        "city": { "type": "string" },
+        "zipcode": { "type": "string" }
+      },
+      "required": ["street", "city", "zipcode"]
+    }
+  },
+  "required": ["name", "address"]
+}
+```
+
+## Special Type Formats
+
+### UUID
+
+```python
+from uuid import UUID
+
+@lodum.lodum
+class Entity:
+    def __init__(self, id: UUID, name: str):
+        self.id = id
+        self.name = name
+
+schema = lodum.schema(Entity)
+# id schema: {"type": "string", "format": "uuid"}
+```
+
+### Datetime
+
+```python
+from datetime import datetime
+
+@lodum.lodum
+class Event:
+    def __init__(self, created_at: datetime, name: str):
+        self.created_at = created_at
+        self.name = name
+
+schema = lodum.schema(Event)
+# created_at schema: {"type": "string", "format": "date-time"}
+```
+
+### Bytes
+
+```python
+@lodum.lodum
+class BinaryData:
+    def __init__(self, data: bytes):
+        self.data = data
+
+schema = lodum.schema(BinaryData)
+# data schema: {"type": "string", "contentEncoding": "base64"}
+```
+
+### Enums
+
+```python
+from enum import Enum
+
+class Status(Enum):
+    PENDING = "pending"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+
+@lodum.lodum
+class Task:
+    def __init__(self, name: str, status: Status):
+        self.name = name
+        self.status = status
+
+schema = lodum.schema(Task)
+```
+
+**Output:**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "status": {
+      "enum": ["pending", "active", "completed"]
+    }
+  },
+  "required": ["name", "status"]
+}
+```
+
+## Field Customization in Schemas
+
+Field options like `rename` are reflected in the generated schema:
+
+```python
+from lodum import field
+
+@lodum.lodum
+class User:
+    def __init__(
+        self,
+        user_id: int = field(rename="id"),
+        full_name: str = field(rename="name")
+    ):
+        self.user_id = user_id
+        self.full_name = full_name
+
+schema = lodum.schema(User)
+```
+
+**Output:**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": { "type": "integer" },
+    "name": { "type": "string" }
+  },
+  "required": ["id", "name"]
+}
+```
+
+<Info>
+The schema uses the **serialized names** (after `rename`), not the Python attribute names.
+</Info>
+
+## Recursive Types
+
+Lodum handles recursive and circular references using JSON Schema `$ref`:
+
+```python
+from typing import Optional, List
+
+@lodum.lodum
+class TreeNode:
+    def __init__(self, value: int, children: Optional[List['TreeNode']] = None):
+        self.value = value
+        self.children = children or []
+
+schema = lodum.schema(TreeNode)
+```
+
+Recursive references are represented as:
+
+```json
+{
+  "$ref": "#/definitions/TreeNode"
+}
+```
+
+## Tagged Unions (Discriminated Unions)
+
+When using tagged unions, Lodum adds discriminator information:
+
+```python
+from typing import Union
+
+@lodum.lodum(tag="type", tag_value="circle")
+class Circle:
+    def __init__(self, radius: float):
+        self.radius = radius
+
+@lodum.lodum(tag="type", tag_value="rectangle")
+class Rectangle:
+    def __init__(self, width: float, height: float):
+        self.width = width
+        self.height = height
+
+@lodum.lodum
+class Drawing:
+    def __init__(self, shape: Union[Circle, Rectangle]):
+        self.shape = shape
+
+schema = lodum.schema(Drawing)
+```
+
+The schema includes a `discriminator` field:
+
+```json
+{
+  "anyOf": [...],
+  "discriminator": {
+    "propertyName": "type"
+  }
+}
+```
+
+## Using Schemas with LLMs
+
+JSON schemas are perfect for defining tool parameters with language models:
+
+```python
+import lodum
+import json
+
+@lodum.lodum
+class SearchParams:
+    def __init__(self, query: str, max_results: int = 10, include_metadata: bool = False):
+        self.query = query
+        self.max_results = max_results
+        self.include_metadata = include_metadata
+
+tool_definition = {
+    "name": "search_documents",
+    "description": "Search the document database",
+    "parameters": lodum.schema(SearchParams)
+}
+
+print(json.dumps(tool_definition, indent=2))
+```
+
+## Validation with External Libraries
+
+Use generated schemas with JSON Schema validators:
+
+```python
+import jsonschema
+import lodum
+from lodum import json as lodum_json
+
+@lodum.lodum
+class Product:
+    def __init__(self, name: str, price: float):
+        self.name = name
+        self.price = price
+
+schema = lodum.schema(Product)
+
+# Validate arbitrary JSON against the schema
+data = {"name": "Widget", "price": 19.99}
+jsonschema.validate(instance=data, schema=schema)
+
+# Invalid data raises ValidationError
+invalid_data = {"name": "Widget", "price": "not a number"}
+try:
+    jsonschema.validate(instance=invalid_data, schema=schema)
+except jsonschema.ValidationError as e:
+    print(f"Validation failed: {e.message}")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Extensions" icon="puzzle-piece" href="/guides/extensions">
+    Learn about numpy, pandas, and polars support
+  </Card>
+  <Card title="Basic Usage" icon="book-open" href="/guides/basic-usage">
+    Return to basic usage patterns
+  </Card>
+</CardGroup>

@@ -1,0 +1,492 @@
+---
+title: "schema()"
+description: "Generate JSON Schema from lodum-enabled classes"
+---
+
+## Overview
+
+The `schema()` function generates a JSON Schema representation of a lodum-enabled class. This is useful for API documentation, validation, code generation, and integration with tools that consume JSON Schema.
+
+## Signature
+
+```python
+def schema(t: Type[Any]) -> Dict[str, Any]
+```
+
+Alias: Also available as `generate_schema()` in `lodum.internal`.
+
+## Parameters
+
+<ParamField path="t" type="Type[Any]">
+  The type to generate a schema for. Typically a lodum-enabled class, but can also be a generic type like `List[int]`, `Dict[str, User]`, etc.
+</ParamField>
+
+## Returns
+
+A dictionary representing the JSON Schema for the given type, following the JSON Schema specification.
+
+## Basic Usage
+
+### Simple Class
+
+```python
+from lodum import lodum, schema
+
+@lodum
+class User:
+    def __init__(self, name: str, age: int):
+        self.name = name
+        self.age = age
+
+user_schema = schema(User)
+# {
+#     'type': 'object',
+#     'properties': {
+#         'name': {'type': 'string'},
+#         'age': {'type': 'integer'}
+#     },
+#     'required': ['name', 'age']
+# }
+```
+
+### With Optional Fields
+
+```python
+from lodum import lodum, field, schema
+from typing import Optional
+
+@lodum
+class Config:
+    def __init__(
+        self,
+        host: str,
+        port: int = field(default=8080),
+        debug: Optional[bool] = None,
+    ):
+        self.host = host
+        self.port = port
+        self.debug = debug
+
+config_schema = schema(Config)
+# {
+#     'type': 'object',
+#     'properties': {
+#         'host': {'type': 'string'},
+#         'port': {'type': 'integer'},
+#         'debug': {'type': 'boolean'}
+#     },
+#     'required': ['host']  # Only required fields, not those with defaults
+# }
+```
+
+## Type Mapping
+
+### Primitive Types
+
+```python
+from lodum import schema
+
+schema(int)      # {'type': 'integer'}
+schema(str)      # {'type': 'string'}
+schema(float)    # {'type': 'number'}
+schema(bool)     # {'type': 'boolean'}
+schema(type(None))  # {'type': 'null'}
+```
+
+### Collections
+
+```python
+from lodum import lodum, schema
+from typing import List, Dict
+
+@lodum
+class Container:
+    def __init__(
+        self,
+        items: List[str],
+        metadata: Dict[str, int],
+    ):
+        self.items = items
+        self.metadata = metadata
+
+container_schema = schema(Container)
+# {
+#     'type': 'object',
+#     'properties': {
+#         'items': {
+#             'type': 'array',
+#             'items': {'type': 'string'}
+#         },
+#         'metadata': {
+#             'type': 'object',
+#             'additionalProperties': {'type': 'integer'}
+#         }
+#     },
+#     'required': ['items', 'metadata']
+# }
+```
+
+### Enums
+
+```python
+from lodum import lodum, schema
+from enum import Enum
+
+class Status(Enum):
+    PENDING = "pending"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+
+@lodum
+class Task:
+    def __init__(self, status: Status):
+        self.status = status
+
+task_schema = schema(Task)
+# {
+#     'type': 'object',
+#     'properties': {
+#         'status': {
+#             'enum': ['pending', 'active', 'completed']
+#         }
+#     },
+#     'required': ['status']
+# }
+```
+
+### Datetime Types
+
+```python
+from lodum import lodum, schema
+from datetime import datetime
+
+@lodum
+class Event:
+    def __init__(self, created_at: datetime):
+        self.created_at = created_at
+
+event_schema = schema(Event)
+# {
+#     'type': 'object',
+#     'properties': {
+#         'created_at': {
+#             'type': 'string',
+#             'format': 'date-time'
+#         }
+#     },
+#     'required': ['created_at']
+# }
+```
+
+### UUID and Path
+
+```python
+from lodum import lodum, schema
+from uuid import UUID
+from pathlib import Path
+
+@lodum
+class Document:
+    def __init__(self, id: UUID, path: Path):
+        self.id = id
+        self.path = path
+
+doc_schema = schema(Document)
+# {
+#     'type': 'object',
+#     'properties': {
+#         'id': {
+#             'type': 'string',
+#             'format': 'uuid'
+#         },
+#         'path': {'type': 'string'}
+#     },
+#     'required': ['id', 'path']
+# }
+```
+
+## Advanced Features
+
+### Nested Objects
+
+```python
+from lodum import lodum, schema
+from typing import List
+
+@lodum
+class Address:
+    def __init__(self, street: str, city: str):
+        self.street = street
+        self.city = city
+
+@lodum
+class Person:
+    def __init__(self, name: str, address: Address):
+        self.name = name
+        self.address = address
+
+person_schema = schema(Person)
+# {
+#     'type': 'object',
+#     'properties': {
+#         'name': {'type': 'string'},
+#         'address': {
+#             'type': 'object',
+#             'properties': {
+#                 'street': {'type': 'string'},
+#                 'city': {'type': 'string'}
+#             },
+#             'required': ['street', 'city']
+#         }
+#     },
+#     'required': ['name', 'address']
+# }
+```
+
+### Union Types
+
+```python
+from lodum import lodum, schema
+from typing import Union
+
+@lodum
+class Data:
+    def __init__(self, value: Union[int, str]):
+        self.value = value
+
+data_schema = schema(Data)
+# {
+#     'type': 'object',
+#     'properties': {
+#         'value': {
+#             'anyOf': [
+#                 {'type': 'integer'},
+#                 {'type': 'string'}
+#             ]
+#         }
+#     },
+#     'required': ['value']
+# }
+```
+
+### Tagged Unions (Discriminated)
+
+```python
+from lodum import lodum, schema
+from typing import Union
+
+@lodum(tag="type", tag_value="circle")
+class Circle:
+    def __init__(self, radius: float):
+        self.radius = radius
+
+@lodum(tag="type", tag_value="square")
+class Square:
+    def __init__(self, side: float):
+        self.side = side
+
+@lodum
+class Drawing:
+    def __init__(self, shape: Union[Circle, Square]):
+        self.shape = shape
+
+drawing_schema = schema(Drawing)
+# {
+#     'type': 'object',
+#     'properties': {
+#         'shape': {
+#             'anyOf': [
+#                 {
+#                     'type': 'object',
+#                     'properties': {
+#                         'type': {'const': 'circle'},
+#                         'radius': {'type': 'number'}
+#                     },
+#                     'required': ['type', 'radius']
+#                 },
+#                 {
+#                     'type': 'object',
+#                     'properties': {
+#                         'type': {'const': 'square'},
+#                         'side': {'type': 'number'}
+#                     },
+#                     'required': ['type', 'side']
+#                 }
+#             ],
+#             'discriminator': {'propertyName': 'type'}
+#         }
+#     },
+#     'required': ['shape']
+# }
+```
+
+### Field Renaming
+
+```python
+from lodum import lodum, field, schema
+
+@lodum
+class API:
+    def __init__(
+        self,
+        api_key: str = field(rename="apiKey"),
+        base_url: str = field(rename="baseURL"),
+    ):
+        self.api_key = api_key
+        self.base_url = base_url
+
+api_schema = schema(API)
+# {
+#     'type': 'object',
+#     'properties': {
+#         'apiKey': {'type': 'string'},  # Renamed
+#         'baseURL': {'type': 'string'}   # Renamed
+#     },
+#     'required': ['apiKey', 'baseURL']
+# }
+```
+
+### Tuples with Fixed Structure
+
+```python
+from lodum import lodum, schema
+from typing import Tuple
+
+@lodum
+class Point:
+    def __init__(self, coords: Tuple[float, float, float]):
+        self.coords = coords
+
+point_schema = schema(Point)
+# {
+#     'type': 'object',
+#     'properties': {
+#         'coords': {
+#             'type': 'array',
+#             'prefixItems': [
+#                 {'type': 'number'},
+#                 {'type': 'number'},
+#                 {'type': 'number'}
+#             ]
+#         }
+#     },
+#     'required': ['coords']
+# }
+```
+
+### Sets
+
+```python
+from lodum import lodum, schema
+from typing import Set
+
+@lodum
+class Tags:
+    def __init__(self, values: Set[str]):
+        self.values = values
+
+tags_schema = schema(Tags)
+# {
+#     'type': 'object',
+#     'properties': {
+#         'values': {
+#             'type': 'array',
+#             'items': {'type': 'string'},
+#             'uniqueItems': True
+#         }
+#     },
+#     'required': ['values']
+# }
+```
+
+## Recursive Types
+
+For recursive or circular references, the schema generator uses `$ref`:
+
+```python
+from lodum import lodum, schema
+from typing import Optional, List
+
+@lodum
+class TreeNode:
+    def __init__(
+        self,
+        value: int,
+        children: Optional[List['TreeNode']] = None,
+    ):
+        self.value = value
+        self.children = children
+
+tree_schema = schema(TreeNode)
+# Includes $ref for recursive children
+```
+
+## Format-Specific Schema
+
+Some format modules provide their own schema functions with format-specific features:
+
+```python
+from lodum import lodum, json, yaml
+
+@lodum
+class Model:
+    def __init__(self, name: str):
+        self.name = name
+
+# Use format-specific schema if available
+json_schema = json.schema(Model)
+yaml_schema = yaml.schema(Model)
+```
+
+## Use Cases
+
+### API Documentation
+
+Generate OpenAPI schemas for your endpoints:
+
+```python
+from lodum import lodum, schema
+import json
+
+@lodum
+class CreateUserRequest:
+    def __init__(self, username: str, email: str):
+        self.username = username
+        self.email = email
+
+print(json.dumps(schema(CreateUserRequest), indent=2))
+```
+
+### Validation
+
+Use with JSON Schema validators like `jsonschema`:
+
+```python
+from lodum import lodum, schema
+import jsonschema
+
+@lodum
+class Config:
+    def __init__(self, port: int, host: str):
+        self.port = port
+        self.host = host
+
+config_schema = schema(Config)
+data = {"port": 8080, "host": "localhost"}
+jsonschema.validate(data, config_schema)
+```
+
+## Notes
+
+- The schema reflects the serialized structure, including field renames
+- Fields with defaults are not marked as required
+- The function handles circular references using `$ref`
+- Maximum recursion depth is `DEFAULT_MAX_DEPTH` (100)
+- Skipped fields (`skip_serializing=True`) are still included in the schema
+
+## See Also
+
+- [@lodum](/api/lodum-decorator) - Enable serialization
+- [field()](/api/field) - Configure field metadata
+- [JSON Format](/formats/json) - JSON serialization
+- [Schema Generation Guide](/guides/schema-generation) - Using schemas in practice

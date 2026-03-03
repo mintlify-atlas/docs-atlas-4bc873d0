@@ -1,0 +1,217 @@
+---
+title: YAML Format
+description: YAML serialization and deserialization with Lodum
+---
+
+# YAML Format
+
+Lodum provides YAML support using the `ruamel.yaml` library, which supports YAML 1.2 and preserves formatting.
+
+## Installation
+
+YAML support requires the `ruamel.yaml` library:
+
+```bash
+pip install lodum[yaml]
+```
+
+## API Reference
+
+### dump()
+
+```python
+from lodum import yaml
+
+yaml.dump(obj: Any, target: Optional[Union[IO[str], Path]] = None, **kwargs) -> Optional[str]
+```
+
+Encodes a Python object to YAML.
+
+**Parameters:**
+- `obj`: The object to encode (must be a `@lodum`-decorated class)
+- `target`: Optional file-like object or Path to write to
+- `**kwargs`: Additional arguments for `yaml.dump`
+
+**Returns:**
+- The YAML string if `target` is None, otherwise None
+
+**Example:**
+
+```python
+from lodum import lodum, yaml
+from pathlib import Path
+
+@lodum
+class Config:
+    host: str
+    port: int
+    debug: bool
+
+config = Config(host="localhost", port=8080, debug=True)
+
+# Serialize to string
+yaml_str = yaml.dump(config)
+print(yaml_str)
+# host: localhost
+# port: 8080
+# debug: true
+
+# Serialize to file
+yaml.dump(config, Path("config.yaml"))
+```
+
+### dumps()
+
+```python
+yaml.dumps(obj: Any, **kwargs) -> str
+```
+
+Legacy alias for `dump(obj)`. Provided for compatibility.
+
+### load()
+
+```python
+yaml.load(
+    cls: Type[T],
+    source: Union[str, IO[Any], Path],
+    max_size: int = DEFAULT_MAX_SIZE
+) -> T
+```
+
+Decodes YAML from a string, stream, or file into a Python object.
+
+**Parameters:**
+- `cls`: The class to instantiate
+- `source`: YAML string, file-like object, or Path
+- `max_size`: Maximum allowed size for string input (default: 10MB)
+
+**Returns:**
+- An instance of `cls`
+
+**Example:**
+
+```python
+from lodum import lodum, yaml
+
+@lodum
+class Config:
+    host: str
+    port: int
+    debug: bool
+
+# Load from string
+yaml_str = """
+host: localhost
+port: 8080
+debug: true
+"""
+config = yaml.load(Config, yaml_str)
+print(f"{config.host}:{config.port}")
+# localhost:8080
+
+# Load from file
+config = yaml.load(Config, Path("config.yaml"))
+```
+
+### loads()
+
+```python
+yaml.loads(cls: Type[T], yaml_string: str, **kwargs) -> T
+```
+
+Legacy alias for `load(cls, source)`. Provided for compatibility.
+
+### stream()
+
+```python
+yaml.stream(cls: Type[T], source: Union[IO[Any], Path]) -> Iterator[T]
+```
+
+Lazily decodes a stream of YAML documents. Supports multi-document YAML streams (documents separated by `---`).
+
+**Parameters:**
+- `cls`: The class to instantiate for each item
+- `source`: A stream, file-like object, or Path
+
+**Returns:**
+- An iterator yielding instances of `cls`
+
+**Example:**
+
+```python
+from lodum import lodum, yaml
+from pathlib import Path
+
+@lodum
+class Config:
+    host: str
+    port: int
+
+# configs.yaml contains multiple documents:
+# ---
+# host: server1
+# port: 8080
+# ---
+# host: server2
+# port: 8081
+
+for config in yaml.stream(Config, Path("configs.yaml")):
+    print(f"{config.host}:{config.port}")
+# server1:8080
+# server2:8081
+```
+
+### schema()
+
+```python
+yaml.schema(cls: Type[Any]) -> Dict[str, Any]
+```
+
+Generates a JSON Schema for a given lodum-enabled class.
+
+**Example:**
+
+```python
+from lodum import lodum, yaml
+
+@lodum
+class Config:
+    host: str
+    port: int
+    debug: bool
+
+schema = yaml.schema(Config)
+print(schema)
+# {'type': 'object', 'properties': {...}, 'required': [...]}
+```
+
+## Binary Data Handling
+
+YAML doesn't natively support arbitrary binary data. Lodum encodes `bytes` fields using base64 for cross-format consistency:
+
+```python
+from lodum import lodum, yaml
+
+@lodum
+class Asset:
+    name: str
+    data: bytes
+
+asset = Asset(name="icon", data=b"\x89PNG")
+yaml_str = yaml.dump(asset)
+print(yaml_str)
+# name: icon
+# data: iVBORw==
+
+# Deserialization automatically decodes base64 back to bytes
+restored = yaml.load(Asset, yaml_str)
+assert restored.data == b"\x89PNG"
+```
+
+## YAML Configuration
+
+Lodum uses `ruamel.yaml` with safe mode enabled. The YAML instance is configured to:
+- Use safe loading (typ="safe")
+- Preserve key order (sort_base_mapping_type_on_output = False)
+
+This ensures secure deserialization while maintaining the order of fields in your data classes.

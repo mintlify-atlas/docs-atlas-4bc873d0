@@ -1,0 +1,206 @@
+---
+title: TOML Format
+description: TOML serialization and deserialization with Lodum
+---
+
+# TOML Format
+
+Lodum provides TOML support using `tomllib` (Python 3.11+) or `tomli` for reading and `tomli-w` for writing.
+
+## Installation
+
+TOML support requires additional dependencies:
+
+```bash
+pip install lodum[toml]
+```
+
+This installs:
+- `tomli-w` for serialization
+- `tomli` for deserialization (Python < 3.11)
+- `tomllib` is used on Python 3.11+ (built-in)
+
+## API Reference
+
+### dump()
+
+```python
+from lodum import toml
+
+toml.dump(obj: Any, target: Optional[Union[IO[str], Path]] = None, **kwargs) -> Optional[str]
+```
+
+Encodes a Python object to TOML.
+
+**Parameters:**
+- `obj`: The object to encode (must be a `@lodum`-decorated class)
+- `target`: Optional file-like object or Path to write to
+- `**kwargs`: Additional arguments for `tomli_w.dump(s)`
+
+**Returns:**
+- The TOML string if `target` is None, otherwise None
+
+**Example:**
+
+```python
+from lodum import lodum, toml
+from pathlib import Path
+
+@lodum
+class Database:
+    host: str
+    port: int
+    credentials: dict[str, str]
+
+db = Database(
+    host="localhost",
+    port=5432,
+    credentials={"user": "admin", "password": "secret"}
+)
+
+# Serialize to string
+toml_str = toml.dump(db)
+print(toml_str)
+# host = "localhost"
+# port = 5432
+# 
+# [credentials]
+# user = "admin"
+# password = "secret"
+
+# Serialize to file
+toml.dump(db, Path("database.toml"))
+```
+
+### dumps()
+
+```python
+toml.dumps(obj: Any, **kwargs) -> str
+```
+
+Legacy alias for `dump(obj)`. Provided for compatibility.
+
+### load()
+
+```python
+toml.load(
+    cls: Type[T],
+    source: Union[str, IO[Any], Path],
+    max_size: int = DEFAULT_MAX_SIZE
+) -> T
+```
+
+Decodes TOML from a string, stream, or file into a Python object.
+
+**Parameters:**
+- `cls`: The class to instantiate
+- `source`: TOML string, file-like object, or Path
+- `max_size`: Maximum allowed size for string input (default: 10MB)
+
+**Returns:**
+- An instance of `cls` populated with the decoded data
+
+**Example:**
+
+```python
+from lodum import lodum, toml
+from pathlib import Path
+
+@lodum
+class Database:
+    host: str
+    port: int
+    credentials: dict[str, str]
+
+# Load from string
+toml_str = """
+host = "localhost"
+port = 5432
+
+[credentials]
+user = "admin"
+password = "secret"
+"""
+db = toml.load(Database, toml_str)
+print(f"{db.host}:{db.port}")
+# localhost:5432
+
+# Load from file
+db = toml.load(Database, Path("database.toml"))
+```
+
+### loads()
+
+```python
+toml.loads(cls: Type[T], toml_string: str, **kwargs) -> T
+```
+
+Legacy alias for `load(cls, source)`. Provided for compatibility.
+
+### schema()
+
+```python
+toml.schema(cls: Type[Any]) -> Dict[str, Any]
+```
+
+Generates a JSON Schema for a given lodum-enabled class.
+
+**Example:**
+
+```python
+from lodum import lodum, toml
+
+@lodum
+class Database:
+    host: str
+    port: int
+    credentials: dict[str, str]
+
+schema = toml.schema(Database)
+print(schema)
+# {'type': 'object', 'properties': {...}, 'required': [...]}
+```
+
+## Binary Data Handling
+
+TOML doesn't natively support binary data. Lodum automatically encodes `bytes` fields using base64:
+
+```python
+from lodum import lodum, toml
+
+@lodum
+class Certificate:
+    name: str
+    data: bytes
+
+cert = Certificate(name="server", data=b"\x00\x01\x02\x03")
+toml_str = toml.dump(cert)
+print(toml_str)
+# name = "server"
+# data = "AAECAw=="
+
+# Deserialization automatically decodes base64 back to bytes
+restored = toml.load(Certificate, toml_str)
+assert restored.data == b"\x00\x01\x02\x03"
+```
+
+## TOML Limitations
+
+TOML has some structural limitations compared to JSON and YAML:
+
+1. **No streaming support**: TOML doesn't support multi-document streams like YAML
+2. **Table structure**: Complex nested structures are represented as TOML tables
+3. **Type constraints**: TOML has stricter type requirements (e.g., arrays must be homogeneous)
+
+## Use Cases
+
+TOML is ideal for:
+- Configuration files (see `pyproject.toml`)
+- Application settings
+- Human-editable structured data
+
+TOML is less suitable for:
+- Large datasets
+- Streaming data
+- Binary data
+- Highly nested or complex structures

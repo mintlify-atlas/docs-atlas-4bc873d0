@@ -1,0 +1,452 @@
+---
+title: 'Loader Protocol'
+description: 'Protocol definition for custom deserialization formats'
+---
+
+## Overview
+
+The `Loader` protocol defines the interface for implementing custom deserialization formats in Lodum. By implementing this protocol, you can create loaders for any input format (JSON, MessagePack, TOML, etc.).
+
+Lodum provides `BaseLoader` as a base implementation that works with in-memory data structures.
+
+## Loader Protocol
+
+The complete protocol definition from `lodum.core`:
+
+```python
+from typing import Any, Dict, Iterator, List, Optional, Protocol, Union
+
+class Loader(Protocol):
+    """Defines the interface for a data format loader (decoder)."""
+
+    def load_int(self) -> int: ...
+
+    def load_str(self) -> str: ...
+
+    def load_float(self) -> float: ...
+
+    def load_bool(self) -> bool: ...
+
+    def load_bytes(self) -> bytes: ...
+
+    def load_list(self) -> Iterator["Loader"]: ...
+
+    def load_dict(self) -> Iterator[tuple[str, "Loader"]]: ...
+
+    def load_any(self) -> Any: ...
+
+    def mark(self) -> Any: ...
+
+    def rewind(self, marker: Any) -> None: ...
+
+    def get_dict(self) -> Optional[Union[Dict[str, Any], List[Any]]]: ...
+
+    def load_bytes_value(self, value: Any) -> bytes: ...
+```
+
+## Method Reference
+
+### Type-Specific Loading Methods
+
+#### load_int()
+
+Loads an integer value from the data source.
+
+**Returns:** `int`
+
+**Raises:** `DeserializationError` if the value is not an integer or is a boolean
+
+```python
+value = loader.load_int()
+```
+
+#### load_str()
+
+Loads a string value from the data source.
+
+**Returns:** `str`
+
+**Raises:** `DeserializationError` if the value is not a string
+
+```python
+value = loader.load_str()
+```
+
+#### load_float()
+
+Loads a float value from the data source. Accepts both float and int values.
+
+**Returns:** `float`
+
+**Raises:** `DeserializationError` if the value is not a number
+
+```python
+value = loader.load_float()
+```
+
+#### load_bool()
+
+Loads a boolean value from the data source.
+
+**Returns:** `bool`
+
+**Raises:** `DeserializationError` if the value is not a boolean
+
+```python
+value = loader.load_bool()
+```
+
+#### load_bytes()
+
+Loads a bytes value from the data source.
+
+**Returns:** `bytes`
+
+**Raises:** `DeserializationError` if the value is not bytes
+
+```python
+value = loader.load_bytes()
+```
+
+### Collection Loading Methods
+
+#### load_list()
+
+Loads a list by returning an iterator of loaders for each item.
+
+**Returns:** `Iterator[Loader]` - Each yielded loader represents one list item
+
+**Raises:** `DeserializationError` if the value is not a list
+
+```python
+for item_loader in loader.load_list():
+    item = item_loader.load_int()  # or other type method
+```
+
+#### load_dict()
+
+Loads a dictionary by returning an iterator of (key, value_loader) tuples.
+
+**Returns:** `Iterator[tuple[str, Loader]]` - Each tuple is (field_name, field_loader)
+
+**Raises:** `DeserializationError` if the value is not a dictionary
+
+```python
+for field_name, field_loader in loader.load_dict():
+    value = field_loader.load_any()
+    print(f"{field_name}: {value}")
+```
+
+### Utility Methods
+
+#### load_any()
+
+Loads and returns the raw value without type checking.
+
+**Returns:** `Any` - The raw data value
+
+```python
+raw_value = loader.load_any()
+```
+
+#### mark()
+
+Creates a marker for the current position in the data stream. Used for backtracking.
+
+**Returns:** `Any` - An opaque marker value
+
+```python
+marker = loader.mark()
+# ... attempt to parse ...
+loader.rewind(marker)  # Go back if needed
+```
+
+#### rewind()
+
+Rewinds the loader to a previously marked position.
+
+<ParamField path="marker" type="Any" required>
+  The marker returned from a previous `mark()` call
+</ParamField>
+
+```python
+marker = loader.mark()
+try:
+    value = loader.load_int()
+except DeserializationError:
+    loader.rewind(marker)
+    value = loader.load_str()  # Try alternative
+```
+
+#### get_dict()
+
+Returns the underlying data if it's a dict or list, otherwise None. Used for optimizations.
+
+**Returns:** `Optional[Union[Dict[str, Any], List[Any]]]`
+
+```python
+data = loader.get_dict()
+if data is not None:
+    # Use optimized path with direct dict access
+    value = data.get("field")
+else:
+    # Use standard loader protocol
+    for name, field_loader in loader.load_dict():
+        if name == "field":
+            value = field_loader.load_any()
+```
+
+#### load_bytes_value()
+
+Converts a value to bytes. Can be overridden for custom bytes encoding.
+
+<ParamField path="value" type="Any" required>
+  The value to convert to bytes
+</ParamField>
+
+**Returns:** `bytes`
+
+**Raises:** `DeserializationError` if conversion fails
+
+```python
+# In custom loader:
+def load_bytes_value(self, value: Any) -> bytes:
+    if isinstance(value, str):
+        # Custom: decode base64 strings
+        import base64
+        return base64.b64decode(value)
+    return super().load_bytes_value(value)
+```
+
+## BaseLoader
+
+A base implementation for loaders that work with in-memory Python data structures.
+
+```python
+from lodum.core import BaseLoader
+
+class BaseLoader:
+    def __init__(self, data: Any) -> None:
+        self._data = data
+```
+
+### Key Features
+
+- Works with standard Python dicts, lists, and primitives
+- Automatic type checking with descriptive errors
+- Iterator-based collection access
+- Built-in mark/rewind support
+- Suitable for formats that parse into Python structures (JSON, YAML, etc.)
+
+### Implementation Details
+
+From `lodum.core` (lines 340-405):
+
+```python
+def load_int(self) -> int:
+    val = self.load_any()
+    if not isinstance(val, int) or isinstance(val, bool):
+        raise DeserializationError(f"Expected int, got {type(val).__name__}")
+    return val
+
+def load_str(self) -> str:
+    val = self.load_any()
+    if not isinstance(val, str):
+        raise DeserializationError(f"Expected str, got {type(val).__name__}")
+    return val
+
+def load_float(self) -> float:
+    val = self.load_any()
+    if not isinstance(val, (float, int)):
+        raise DeserializationError(f"Expected float, got {type(val).__name__}")
+    return float(val)
+
+def load_bool(self) -> bool:
+    val = self.load_any()
+    if not isinstance(val, bool):
+        raise DeserializationError(f"Expected bool, got {type(val).__name__}")
+    return val
+
+def load_list(self) -> Iterator["Loader"]:
+    val = self.load_any()
+    if not isinstance(val, list):
+        raise DeserializationError(f"Expected list, got {type(val).__name__}")
+    return (type(self)(item) for item in val)
+
+def load_dict(self) -> Iterator[tuple[str, "Loader"]]:
+    val = self.load_any()
+    if not isinstance(val, dict):
+        raise DeserializationError(f"Expected dict, got {type(val).__name__}")
+    return ((str(k), type(self)(v)) for k, v in val.items())
+```
+
+## Implementation Examples
+
+### Basic Dict Loader
+
+```python
+from lodum.core import BaseLoader
+
+class DictLoader(BaseLoader):
+    """Loads from Python dict/list structures."""
+
+    def __init__(self, data: Any):
+        super().__init__(data)
+
+# Usage
+data = {"name": "Alice", "age": 30}
+loader = DictLoader(data)
+
+for field_name, field_loader in loader.load_dict():
+    print(f"{field_name}: {field_loader.load_any()}")
+```
+
+### JSON String Loader
+
+```python
+import json
+from lodum.core import BaseLoader
+
+class JSONLoader(BaseLoader):
+    """Loads from JSON strings."""
+
+    def __init__(self, json_string: str):
+        data = json.loads(json_string)
+        super().__init__(data)
+
+# Usage
+json_str = '{"name": "Alice", "age": 30}'
+loader = JSONLoader(json_str)
+name = None
+for field_name, field_loader in loader.load_dict():
+    if field_name == "name":
+        name = field_loader.load_str()
+```
+
+### Custom Bytes Encoding
+
+```python
+import base64
+from lodum.core import BaseLoader
+
+class Base64Loader(BaseLoader):
+    """Loader that decodes base64-encoded bytes fields."""
+
+    def load_bytes_value(self, value: Any) -> bytes:
+        if isinstance(value, str):
+            return base64.b64decode(value)
+        return super().load_bytes_value(value)
+
+# Usage
+data = {"data": "SGVsbG8gV29ybGQ="}  # "Hello World" in base64
+loader = Base64Loader(data)
+for name, field_loader in loader.load_dict():
+    if name == "data":
+        decoded = field_loader.load_bytes()
+        print(decoded)  # b'Hello World'
+```
+
+### Streaming Loader (Advanced)
+
+```python
+from typing import Iterator, Any
+from lodum.core import Loader
+from lodum.exception import DeserializationError
+
+class StreamingJSONLoader:
+    """Example streaming loader for NDJSON format."""
+
+    def __init__(self, line: str):
+        import json
+        self._data = json.loads(line)
+        self._position = 0
+
+    def load_any(self) -> Any:
+        return self._data
+
+    def load_int(self) -> int:
+        val = self.load_any()
+        if not isinstance(val, int) or isinstance(val, bool):
+            raise DeserializationError(f"Expected int, got {type(val).__name__}")
+        return val
+
+    def load_dict(self) -> Iterator[tuple[str, "StreamingJSONLoader"]]:
+        val = self.load_any()
+        if not isinstance(val, dict):
+            raise DeserializationError(f"Expected dict, got {type(val).__name__}")
+        return ((str(k), StreamingJSONLoader(v)) for k, v in val.items())
+
+    # ... implement other methods ...
+```
+
+## Usage with Lodum
+
+```python
+from lodum import lodum, load
+from lodum.core import BaseLoader
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+# Use custom loader
+data = {"name": "Alice", "age": 30}
+loader = BaseLoader(data)
+person = load(Person, loader)
+
+print(person.name)  # Alice
+print(person.age)   # 30
+```
+
+## Iterator Pattern
+
+Loaders use an iterator pattern for collections to enable streaming:
+
+```python
+# Loading a list
+for item_loader in loader.load_list():
+    # Each item_loader is independent
+    value = item_loader.load_int()
+    process(value)
+
+# Loading a dict/struct
+for field_name, field_loader in loader.load_dict():
+    # Each field_loader is independent
+    if field_name == "important_field":
+        value = field_loader.load_str()
+        handle(value)
+```
+
+This pattern allows:
+- Lazy evaluation
+- Memory-efficient processing of large collections
+- Selective field loading
+- Early termination
+
+## Error Handling
+
+All loader methods can raise `DeserializationError`:
+
+```python
+from lodum.exception import DeserializationError
+
+try:
+    value = loader.load_int()
+except DeserializationError as e:
+    print(f"Failed to load: {e}")
+    # Handle error or use alternative parsing
+```
+
+## Best Practices
+
+1. **Type Safety**: Always validate types before returning values
+2. **Iterator Efficiency**: Use generators for `load_list()` and `load_dict()`
+3. **Error Messages**: Provide clear, descriptive error messages
+4. **Mark/Rewind**: Implement for formats that support backtracking
+5. **Optimize get_dict()**: Return underlying data when possible for performance
+
+## See Also
+
+- [Dumper Protocol](/api/dumper-protocol) - Counterpart for serialization
+- [Implementing New Formats](/advanced/implementing-formats) - Building complete format implementations

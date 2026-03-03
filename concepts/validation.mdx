@@ -1,0 +1,513 @@
+---
+title: Validation System
+description: Built-in and custom validators to ensure data integrity during deserialization
+---
+
+Lodum includes a validation system that runs during deserialization to ensure data meets your requirements. Validators are attached to fields using the `validate` parameter.
+
+## Basic Usage
+
+```python
+from lodum import lodum, field, json
+from lodum.validators import Range, Length, Match, OneOf
+from lodum.exception import DeserializationError
+
+@lodum
+class User:
+    def __init__(
+        self,
+        age: int = field(validate=Range(min=18, max=120)),
+        username: str = field(validate=Length(min=3, max=20)),
+        email: str = field(validate=Match(r"^[^@]+@[^@]+\.[^@]+$")),
+        role: str = field(validate=OneOf(["admin", "user", "guest"])),
+    ):
+        self.age = age
+        self.username = username
+        self.email = email
+        self.role = role
+
+# Valid data
+user = json.loads(User, '''{
+    "age": 25,
+    "username": "alice",
+    "email": "alice@example.com",
+    "role": "admin"
+}''')
+
+# Invalid data raises DeserializationError
+try:
+    json.loads(User, '{"age": 15, "username": "alice", "email": "alice@example.com", "role": "admin"}')
+except DeserializationError as e:
+    print(e)  # Error at age: Value 15 is less than minimum 18
+```
+
+## Built-in Validators
+
+### Range
+
+Validate that numeric values fall within a specified range.
+
+From `src/lodum/validators.py:15-27`:
+
+```python
+class Range(Validator):
+    def __init__(self, min: Optional[Any] = None, max: Optional[Any] = None) -> None:
+        self.min = min
+        self.max = max
+
+    def __call__(self, value: Any) -> None:
+        if self.min is not None and value < self.min:
+            raise DeserializationError(f"Value {value} is less than minimum {self.min}")
+        if self.max is not None and value > self.max:
+            raise DeserializationError(
+                f"Value {value} is greater than maximum {self.max}"
+            )
+```
+
+**Usage**:
+
+```python
+from lodum import lodum, field
+from lodum.validators import Range
+
+@lodum
+class Product:
+    def __init__(
+        self,
+        price: float = field(validate=Range(min=0)),           # Price must be positive
+        quantity: int = field(validate=Range(min=1, max=1000)), # Between 1 and 1000
+        discount: float = field(validate=Range(min=0, max=1)), # Percentage as decimal
+    ):
+        self.price = price
+        self.quantity = quantity
+        self.discount = discount
+```
+
+**Parameters**:
+- `min` - Minimum allowed value (inclusive), or `None` for no minimum
+- `max` - Maximum allowed value (inclusive), or `None` for no maximum
+
+### Length
+
+Validate the length of sequences (strings, lists, etc.).
+
+From `src/lodum/validators.py:29-50`:
+
+```python
+class Length(Validator):
+    def __init__(self, min: Optional[int] = None, max: Optional[int] = None) -> None:
+        self.min = min
+        self.max = max
+
+    def __call__(self, value: Any) -> None:
+        try:
+            length = len(value)
+        except TypeError:
+            raise DeserializationError(
+                f"Value {value} of type {type(value).__name__} has no length"
+            )
+
+        if self.min is not None and length < self.min:
+            raise DeserializationError(
+                f"Length {length} is less than minimum {self.min}"
+            )
+        if self.max is not None and length > self.max:
+            raise DeserializationError(
+                f"Length {length} is greater than maximum {self.max}"
+            )
+```
+
+**Usage**:
+
+```python
+from lodum import lodum, field
+from lodum.validators import Length
+
+@lodum
+class Post:
+    def __init__(
+        self,
+        title: str = field(validate=Length(min=1, max=200)),     # 1-200 characters
+        tags: list[str] = field(validate=Length(max=10)),        # At most 10 tags
+        content: str = field(validate=Length(min=10)),           # At least 10 chars
+    ):
+        self.title = title
+        self.tags = tags
+        self.content = content
+```
+
+**Parameters**:
+- `min` - Minimum length (inclusive), or `None` for no minimum
+- `max` - Maximum length (inclusive), or `None` for no maximum
+
+### Match
+
+Validate that strings match a regex pattern.
+
+From `src/lodum/validators.py:52-65`:
+
+```python
+class Match(Validator):
+    def __init__(self, pattern: str) -> None:
+        self.pattern = re.compile(pattern)
+
+    def __call__(self, value: Any) -> None:
+        if not isinstance(value, str):
+            raise DeserializationError(
+                f"Value {value} is not a string, cannot match regex"
+            )
+        if not self.pattern.match(value):
+            raise DeserializationError(
+                f"Value '{value}' does not match pattern '{self.pattern.pattern}'"
+            )
+```
+
+**Usage**:
+
+```python
+from lodum import lodum, field
+from lodum.validators import Match
+
+@lodum
+class Account:
+    def __init__(
+        self,
+        username: str = field(validate=Match(r"^[a-zA-Z0-9_]{3,20}$")), # Alphanumeric + underscore
+        email: str = field(validate=Match(r"^[^@]+@[^@]+\.[^@]+$")),   # Basic email format
+        phone: str = field(validate=Match(r"^\+?[1-9]\d{1,14}$")),      # E.164 phone format
+        hex_color: str = field(validate=Match(r"^#[0-9A-Fa-f]{6}$")),   # Hex color code
+    ):
+        self.username = username
+        self.email = email
+        self.phone = phone
+        self.hex_color = hex_color
+```
+
+**Parameters**:
+- `pattern` - Regex pattern string (compiled with `re.compile()`)
+
+<Note>
+The pattern is matched from the start of the string using `pattern.match()`. To match anywhere in the string, prefix with `.*`
+</Note>
+
+### OneOf
+
+Validate that a value is in a set of allowed options.
+
+From `src/lodum/validators.py:67-74`:
+
+```python
+class OneOf(Validator):
+    def __init__(self, options: Container[Any]) -> None:
+        self.options = options
+
+    def __call__(self, value: Any) -> None:
+        if value not in self.options:
+            raise DeserializationError(f"Value {value} is not one of {self.options}")
+```
+
+**Usage**:
+
+```python
+from lodum import lodum, field
+from lodum.validators import OneOf
+
+@lodum
+class Config:
+    def __init__(
+        self,
+        environment: str = field(validate=OneOf(["dev", "staging", "prod"])),
+        log_level: str = field(validate=OneOf({"DEBUG", "INFO", "WARNING", "ERROR"})),
+        status_code: int = field(validate=OneOf([200, 201, 204, 400, 404, 500])),
+    ):
+        self.environment = environment
+        self.log_level = log_level
+        self.status_code = status_code
+```
+
+**Parameters**:
+- `options` - Any container type (list, set, tuple, frozenset, etc.) of allowed values
+
+## Multiple Validators
+
+Apply multiple validators to a single field by passing a list:
+
+```python
+from lodum import lodum, field, json
+from lodum.validators import Length, Match
+
+@lodum
+class User:
+    def __init__(
+        self,
+        username: str = field(validate=[
+            Length(min=3, max=20),
+            Match(r"^[a-zA-Z0-9_]+$"),
+        ]),
+    ):
+        self.username = username
+
+# Validators run in order - both must pass
+user = json.loads(User, '{"username": "alice_123"}')
+
+# Fails Length validator
+try:
+    json.loads(User, '{"username": "ab"}')
+except Exception as e:
+    print(e)  # Error at username: Length 2 is less than minimum 3
+
+# Fails Match validator
+try:
+    json.loads(User, '{"username": "alice@example"}')
+except Exception as e:
+    print(e)  # Error at username: Value 'alice@example' does not match pattern...
+```
+
+From `tests/test_validation.py:60-76`:
+
+```python
+def test_multiple_validators():
+    @lodum
+    class MultiValidated:
+        def __init__(self, val: int = field(validate=[Range(min=10), Range(max=20)])):
+            self.val = val
+
+    # Success
+    json.loads(MultiValidated, '{"val": 15}')
+
+    # Fail min
+    with pytest.raises(DeserializationError):
+        json.loads(MultiValidated, '{"val": 5}')
+
+    # Fail max
+    with pytest.raises(DeserializationError):
+        json.loads(MultiValidated, '{"val": 25}')
+```
+
+## Custom Validators
+
+Create your own validators as functions or classes:
+
+### Function Validators
+
+```python
+from lodum import lodum, field, json
+from lodum.exception import DeserializationError
+
+def is_even(value: int) -> None:
+    if value % 2 != 0:
+        raise DeserializationError("Value must be even")
+
+def is_positive(value: float) -> None:
+    if value <= 0:
+        raise DeserializationError("Value must be positive")
+
+@lodum
+class Data:
+    def __init__(
+        self,
+        count: int = field(validate=is_even),
+        amount: float = field(validate=is_positive),
+    ):
+        self.count = count
+        self.amount = amount
+
+# Valid
+data = json.loads(Data, '{"count": 4, "amount": 10.5}')
+
+# Invalid - count is odd
+try:
+    json.loads(Data, '{"count": 5, "amount": 10.5}')
+except DeserializationError as e:
+    print(e)  # Error at count: Value must be even
+```
+
+From `tests/test_validation.py:78-92`:
+
+```python
+def test_custom_validator():
+    def is_even(v):
+        if v % 2 != 0:
+            raise DeserializationError("Value must be even")
+
+    @lodum
+    class EvenOnly:
+        def __init__(self, val: int = field(validate=is_even)):
+            self.val = val
+
+    json.loads(EvenOnly, '{"val": 4}')
+    with pytest.raises(DeserializationError) as excinfo:
+        json.loads(EvenOnly, '{"val": 5}')
+    assert "Value must be even" in str(excinfo.value)
+```
+
+### Class-Based Validators
+
+Extend the `Validator` base class for reusable validators:
+
+```python
+from lodum import lodum, field, json
+from lodum.validators import Validator
+from lodum.exception import DeserializationError
+
+class Divisible(Validator):
+    def __init__(self, divisor: int):
+        self.divisor = divisor
+
+    def __call__(self, value: int) -> None:
+        if value % self.divisor != 0:
+            raise DeserializationError(
+                f"Value {value} is not divisible by {self.divisor}"
+            )
+
+class StartsWith(Validator):
+    def __init__(self, prefix: str):
+        self.prefix = prefix
+
+    def __call__(self, value: str) -> None:
+        if not value.startswith(self.prefix):
+            raise DeserializationError(
+                f"Value '{value}' does not start with '{self.prefix}'"
+            )
+
+@lodum
+class Item:
+    def __init__(
+        self,
+        quantity: int = field(validate=Divisible(5)),   # Must be multiple of 5
+        sku: str = field(validate=StartsWith("SKU-")), # Must start with SKU-
+    ):
+        self.quantity = quantity
+        self.sku = sku
+
+item = json.loads(Item, '{"quantity": 25, "sku": "SKU-12345"}')
+```
+
+## Validator Base Class
+
+From `src/lodum/validators.py:10-13`:
+
+```python
+class Validator:
+    def __call__(self, value: Any) -> None:
+        raise NotImplementedError
+```
+
+**Contract**:
+- Accept a single `value` argument
+- Return `None` if valid
+- Raise `DeserializationError` if invalid
+
+## Error Messages
+
+Validation errors include the field path:
+
+```python
+from lodum import lodum, field, json
+from lodum.validators import Range
+
+@lodum
+class Address:
+    def __init__(self, zip_code: int = field(validate=Range(min=10000, max=99999))):
+        self.zip_code = zip_code
+
+@lodum
+class User:
+    def __init__(self, name: str, address: Address):
+        self.name = name
+        self.address = address
+
+try:
+    json.loads(User, '{"name": "Alice", "address": {"zip_code": 123}}')
+except Exception as e:
+    print(e)  # Error at address.zip_code: Value 123 is less than minimum 10000
+```
+
+Path tracking works through:
+- Nested objects (`address.zip_code`)
+- List indices (`users[2].email`)
+- Dictionary keys (`config["database"].port`)
+
+## When Validators Run
+
+Validators execute **during deserialization only**, after type conversion but before the value is assigned:
+
+```python
+# Validators run here
+obj = json.loads(MyClass, json_string)
+
+# Validators DO NOT run here
+obj = MyClass(field="value")  # Direct instantiation
+```
+
+<Info>
+If you need validation during instantiation, implement `__post_init__` (for dataclasses) or add validation in `__init__`.
+</Info>
+
+## Best Practices
+
+### Use Built-in Validators
+
+Prefer built-in validators for common cases - they have optimized error messages:
+
+```python
+# Good
+field(validate=Range(min=0, max=100))
+
+# Less ideal (custom lambda)
+field(validate=lambda x: x >= 0 and x <= 100 or (_ for _ in ()).throw(ValueError("Out of range")))
+```
+
+### Compose Validators
+
+Combine simple validators rather than writing complex ones:
+
+```python
+# Good - composable
+username: str = field(validate=[
+    Length(min=3, max=20),
+    Match(r"^[a-zA-Z0-9_]+$"),
+])
+
+# Less ideal - monolithic
+def validate_username(value):
+    if len(value) < 3 or len(value) > 20:
+        raise DeserializationError("Invalid length")
+    if not re.match(r"^[a-zA-Z0-9_]+$", value):
+        raise DeserializationError("Invalid characters")
+
+username: str = field(validate=validate_username)
+```
+
+### Meaningful Error Messages
+
+Provide clear, actionable error messages:
+
+```python
+# Good
+def validate_email(value: str) -> None:
+    if "@" not in value:
+        raise DeserializationError("Email must contain @ symbol")
+
+# Less helpful
+def validate_email(value: str) -> None:
+    if "@" not in value:
+        raise DeserializationError("Invalid")
+```
+
+## Validator Summary
+
+| Validator | Purpose | Parameters |
+|-----------|---------|------------|
+| `Range(min, max)` | Numeric range validation | `min`, `max` (both optional) |
+| `Length(min, max)` | Sequence length validation | `min`, `max` (both optional) |
+| `Match(pattern)` | Regex pattern matching | `pattern` (regex string) |
+| `OneOf(options)` | Enum/choice validation | `options` (container of values) |
+| Custom function | Any validation logic | `value` argument, raises on error |
+| Custom class | Reusable validators | Extend `Validator`, implement `__call__` |
+
+## Related
+
+- [Field Customization](/concepts/field-customization) - Other field() parameters
+- [The @lodum Decorator](/concepts/decorator) - Enable classes for serialization
+- [Format Support](/concepts/formats) - Validation works with all formats

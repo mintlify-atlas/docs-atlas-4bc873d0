@@ -1,0 +1,228 @@
+---
+title: Basic Usage
+description: Learn the fundamental patterns for using Lodum to serialize and deserialize Python objects
+---
+
+## Getting Started
+
+Lodum provides a simple, decorator-based API for serializing Python objects to multiple formats. At its core, you use the `@lodum` decorator to mark classes for serialization.
+
+## Defining Data Structures
+
+Use the `@lodum` decorator on your class with type hints. You can use standard `__init__` methods or `dataclasses`.
+
+```python
+from lodum import lodum
+from dataclasses import dataclass
+
+@lodum
+@dataclass
+class User:
+    name: str
+    age: int
+    is_active: bool
+```
+
+Or with a traditional `__init__` method:
+
+```python
+@lodum
+class ServerConfig:
+    def __init__(self, host: str, port: int, services: list[str]):
+        self.host = host
+        self.port = port
+        self.services = services
+```
+
+<Note>
+Type hints are required - Lodum uses them to understand your data structure and generate optimized serialization code.
+</Note>
+
+## Serializing to JSON
+
+Use `json.dumps()` to convert an instance to a JSON string:
+
+```python
+from lodum import json
+
+user = User(name="Alex", age=30, is_active=True)
+json_string = json.dumps(user)
+print(json_string)
+# Output: {"name": "Alex", "age": 30, "is_active": true}
+```
+
+## Deserializing from JSON
+
+Use `json.loads()` to parse JSON back into Python objects:
+
+```python
+json_data = '{"name": "Barbara", "age": 25, "is_active": false}'
+barb = json.loads(User, json_data)
+
+print(f"Name: {barb.name}, Age: {barb.age}, Active: {barb.is_active}")
+# Output: Name: Barbara, Age: 25, Active: False
+```
+
+<Note>
+Notice that `loads()` requires the target class as the first argument. This enables Lodum to perform type validation and instantiate the correct class.
+</Note>
+
+## Working with Primitives
+
+Lodum handles primitive types directly without requiring a class definition:
+
+```python
+# Serialize primitives
+assert json.dumps(123) == "123"
+assert json.dumps("hello") == '"hello"'
+assert json.dumps(3.14) == "3.14"
+assert json.dumps(True) == "true"
+assert json.dumps(None) == "null"
+
+# Deserialize primitives
+assert json.loads(int, "123") == 123
+assert json.loads(str, '"hello"') == "hello"
+assert json.loads(float, "3.14") == 3.14
+assert json.loads(bool, "true") is True
+assert json.loads(type(None), "null") is None
+```
+
+## Nested Objects
+
+Lodum automatically handles nested `@lodum`-decorated classes:
+
+```python
+@lodum
+class Simple:
+    def __init__(self, a: int, b: str):
+        self.a = a
+        self.b = b
+
+@lodum
+class Nested:
+    def __init__(self, simple: Simple, c: bool):
+        self.simple = simple
+        self.c = c
+
+nested = Nested(simple=Simple(a=42, b="hello"), c=True)
+json_str = json.dumps(nested)
+# {"simple": {"a": 42, "b": "hello"}, "c": true}
+
+# Deserialize
+restored = json.loads(Nested, json_str)
+assert restored.simple.a == 42
+```
+
+## Multiple Format Support
+
+Define your data structure once and serialize to any supported format:
+
+```python
+from lodum import json, yaml, toml, msgpack
+
+user = User(name="Alex", age=30, is_active=True)
+
+# Encode to different formats
+json_output = json.dumps(user)
+yaml_output = yaml.dumps(user)
+toml_output = toml.dumps(user)
+msgpack_output = msgpack.dumps(user)
+```
+
+## Round-Trip Conversions
+
+Lodum ensures reliable round-trip conversions between formats:
+
+```python
+import json as std_json
+from lodum import lodum, json, yaml
+
+@lodum
+class ServerConfig:
+    def __init__(self, host: str, port: int, services: list[str]):
+        self.host = host
+        self.port = port
+        self.services = services
+
+# Start with JSON
+original_json = '{"host": "127.0.0.1", "port": 8080, "services": ["users", "products"]}'
+
+# Decode JSON to Python object
+config_from_json = json.loads(ServerConfig, original_json)
+
+# Encode to YAML
+yaml_output = yaml.dumps(config_from_json)
+
+# Decode YAML back to Python object
+config_from_yaml = yaml.loads(ServerConfig, yaml_output)
+
+# Encode back to JSON
+final_json = json.dumps(config_from_yaml)
+
+# Verify consistency
+assert std_json.loads(original_json) == std_json.loads(final_json)
+```
+
+## Working with Dictionaries
+
+Convert objects to and from plain Python dictionaries:
+
+```python
+import lodum
+
+@lodum
+class User:
+    def __init__(self, user_id: int, name: str):
+        self.user_id = user_id
+        self.name = name
+
+user = User(user_id=1, name="Alex")
+
+# Convert to dictionary
+data = lodum.asdict(user)
+print(data)  # {"user_id": 1, "name": "Alex"}
+
+# Convert from dictionary
+new_user = lodum.fromdict(User, {"user_id": 2, "name": "Sam"})
+assert new_user.user_id == 2
+```
+
+<Tip>
+Use `asdict()` and `fromdict()` when you need to work with plain Python data structures without string encoding.
+</Tip>
+
+## Error Handling
+
+Lodum provides detailed error messages with path information:
+
+```python
+from lodum import lodum, json
+from lodum.exception import DeserializationError
+
+@lodum
+class User:
+    def __init__(self, name: str, age: int):
+        self.name = name
+        self.age = age
+
+json_data = '{"name": "Alex", "age": "not_an_int"}'
+
+try:
+    json.loads(User, json_data)
+except DeserializationError as e:
+    print(e)
+    # Output: Error at age: Expected int, got str
+```
+
+The path tracking works through nested objects, lists, and dictionaries (e.g., `root.users[2].id`).
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Advanced Features" icon="wand-magic-sparkles" href="/guides/advanced-features">
+    Learn about field customization, validation, and type handling
+  </Card>
+  <Card title="Streaming" icon="water" href="/guides/streaming">
+    Handle large datasets with streaming serialization
+  </Card>
+</CardGroup>

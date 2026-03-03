@@ -1,0 +1,449 @@
+---
+title: Extensions
+description: Native support for numpy, pandas, and polars data structures without extra glue code
+---
+
+## Overview
+
+Lodum provides native serialization support for popular data science libraries:
+
+- **NumPy**: `ndarray` serialization
+- **Pandas**: `DataFrame` and `Series` serialization
+- **Polars**: `DataFrame` and `Series` serialization
+
+These extensions are automatically registered when the libraries are installed and imported.
+
+<Note>
+Extensions require the respective libraries to be installed. Use:
+
+```bash
+pip install lodum[numpy]
+pip install lodum[pandas]
+pip install lodum[polars]
+# Or install all at once
+pip install lodum[all]
+```
+</Note>
+
+## NumPy Support
+
+### Arrays
+
+NumPy arrays are serialized as nested lists:
+
+```python
+import numpy as np
+from lodum import lodum, json
+
+@lodum
+class DataContainer:
+    def __init__(self, values: np.ndarray, metadata: str):
+        self.values = values
+        self.metadata = metadata
+
+# Create with numpy array
+data = DataContainer(
+    values=np.array([[1, 2, 3], [4, 5, 6]]),
+    metadata="sensor_readings"
+)
+
+# Serialize to JSON
+json_str = json.dumps(data)
+print(json_str)
+# {"values": [[1, 2, 3], [4, 5, 6]], "metadata": "sensor_readings"}
+
+# Deserialize back
+restored = json.loads(DataContainer, json_str)
+assert isinstance(restored.values, np.ndarray)
+assert np.array_equal(restored.values, data.values)
+```
+
+### How It Works
+
+The NumPy extension uses `ndarray.tolist()` for serialization:
+
+```python
+# From src/lodum/extensions/numpy.py
+def _dump_numpy_array(obj: Any, dumper: Dumper, depth: int, seen: Optional[set]) -> Any:
+    from ..internal import dump
+    return dump(obj.tolist(), dumper, depth + 1, seen)
+
+def _load_numpy_array(
+    cls: Type[Any], loader: Loader, path: Optional[str] = None, depth: int = 0
+) -> Any:
+    from ..internal import load
+    return np.array(load(List, loader, path, depth + 1))
+```
+
+### Multidimensional Arrays
+
+```python
+import numpy as np
+from lodum import json
+
+# 3D array
+array_3d = np.array([
+    [[1, 2], [3, 4]],
+    [[5, 6], [7, 8]]
+])
+
+json_str = json.dumps(array_3d)
+# [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]
+
+restored = json.loads(np.ndarray, json_str)
+assert restored.shape == (2, 2, 2)
+```
+
+### Data Types
+
+NumPy data types are preserved through JSON conversion where possible:
+
+```python
+import numpy as np
+from lodum import json
+
+# Integer arrays
+int_array = np.array([1, 2, 3], dtype=np.int32)
+json_str = json.dumps(int_array)
+restored = json.loads(np.ndarray, json_str)
+
+# Float arrays
+float_array = np.array([1.5, 2.5, 3.5], dtype=np.float64)
+json_str = json.dumps(float_array)
+restored = json.loads(np.ndarray, json_str)
+```
+
+<Warning>
+Specialized NumPy dtypes (like `datetime64` or custom structured types) are converted to Python primitives during serialization. The restored array will use NumPy's default dtype inference.
+</Warning>
+
+## Pandas Support
+
+### DataFrames
+
+Pandas DataFrames are serialized using the `records` orientation:
+
+```python
+import pandas as pd
+from lodum import lodum, json
+
+@lodum
+class Dataset:
+    def __init__(self, name: str, data: pd.DataFrame):
+        self.name = name
+        self.data = data
+
+# Create DataFrame
+df = pd.DataFrame({
+    'id': [1, 2, 3],
+    'name': ['Alice', 'Bob', 'Charlie'],
+    'score': [85.5, 90.0, 78.5]
+})
+
+dataset = Dataset(name="test_scores", data=df)
+
+# Serialize
+json_str = json.dumps(dataset)
+print(json_str)
+# {
+#   "name": "test_scores",
+#   "data": [
+#     {"id": 1, "name": "Alice", "score": 85.5},
+#     {"id": 2, "name": "Bob", "score": 90.0},
+#     {"id": 3, "name": "Charlie", "score": 78.5}
+#   ]
+# }
+
+# Deserialize
+restored = json.loads(Dataset, json_str)
+assert isinstance(restored.data, pd.DataFrame)
+assert len(restored.data) == 3
+assert restored.data['name'].tolist() == ['Alice', 'Bob', 'Charlie']
+```
+
+### How DataFrames Are Serialized
+
+```python
+# From src/lodum/extensions/pandas.py
+def _dump_pandas_dataframe(
+    obj: Any, dumper: Dumper, depth: int, seen: Optional[set]
+) -> Any:
+    from ..internal import dump
+    return dump(obj.to_dict(orient="records"), dumper, depth + 1, seen)
+
+def _load_pandas_dataframe(
+    cls: Type[Any], loader: Loader, path: Optional[str] = None, depth: int = 0
+) -> Any:
+    from ..internal import load
+    data = load(List[Dict[str, Any]], loader, path, depth + 1)
+    return pd.DataFrame.from_records(data)
+```
+
+### Series
+
+Pandas Series are serialized as dictionaries:
+
+```python
+import pandas as pd
+from lodum import lodum, json
+
+@lodum
+class Measurements:
+    def __init__(self, values: pd.Series):
+        self.values = values
+
+# Create Series
+series = pd.Series([10, 20, 30], index=['a', 'b', 'c'])
+measurements = Measurements(values=series)
+
+# Serialize
+json_str = json.dumps(measurements)
+print(json_str)
+# {"values": {"a": 10, "b": 20, "c": 30}}
+
+# Deserialize
+restored = json.loads(Measurements, json_str)
+assert isinstance(restored.values, pd.Series)
+assert restored.values['a'] == 10
+```
+
+### Complex DataFrames
+
+```python
+import pandas as pd
+from datetime import datetime
+from lodum import json
+
+# DataFrame with datetime and mixed types
+df = pd.DataFrame({
+    'timestamp': [datetime(2024, 1, 1), datetime(2024, 1, 2)],
+    'value': [100.5, 200.7],
+    'status': ['active', 'inactive']
+})
+
+json_str = json.dumps(df)
+restored = json.loads(pd.DataFrame, json_str)
+
+# Note: datetime strings need manual conversion
+restored['timestamp'] = pd.to_datetime(restored['timestamp'])
+```
+
+## Polars Support
+
+### DataFrames
+
+Polars DataFrames are serialized as dictionaries (column-oriented):
+
+```python
+import polars as pl
+from lodum import lodum, json
+
+@lodum
+class PolarsData:
+    def __init__(self, name: str, data: pl.DataFrame):
+        self.name = name
+        self.data = data
+
+# Create Polars DataFrame
+df = pl.DataFrame({
+    'id': [1, 2, 3],
+    'value': [10.5, 20.3, 30.1],
+    'category': ['A', 'B', 'A']
+})
+
+data = PolarsData(name="experiment", data=df)
+
+# Serialize
+json_str = json.dumps(data)
+print(json_str)
+# {
+#   "name": "experiment",
+#   "data": {
+#     "id": [1, 2, 3],
+#     "value": [10.5, 20.3, 30.1],
+#     "category": ["A", "B", "A"]
+#   }
+# }
+
+# Deserialize
+restored = json.loads(PolarsData, json_str)
+assert isinstance(restored.data, pl.DataFrame)
+assert restored.data.height == 3
+assert restored.data['id'].to_list() == [1, 2, 3]
+```
+
+### How Polars DataFrames Are Serialized
+
+```python
+# From src/lodum/extensions/polars.py
+def _dump_polars_dataframe(
+    obj: Any, dumper: Dumper, depth: int, seen: Optional[set]
+) -> Any:
+    from ..internal import dump
+    return dump(obj.to_dict(), dumper, depth + 1, seen)
+
+def _load_polars_dataframe(
+    cls: Type[Any], loader: Loader, path: Optional[str] = None, depth: int = 0
+) -> Any:
+    from ..internal import load
+    return pl.DataFrame(load(dict, loader, path, depth + 1))
+```
+
+### Series
+
+Polars Series are serialized as lists:
+
+```python
+import polars as pl
+from lodum import lodum, json
+
+@lodum
+class Sequence:
+    def __init__(self, values: pl.Series):
+        self.values = values
+
+# Create Series
+series = pl.Series("numbers", [1, 2, 3, 4, 5])
+seq = Sequence(values=series)
+
+# Serialize
+json_str = json.dumps(seq)
+print(json_str)
+# {"values": [1, 2, 3, 4, 5]}
+
+# Deserialize
+restored = json.loads(Sequence, json_str)
+assert isinstance(restored.values, pl.Series)
+assert restored.values.to_list() == [1, 2, 3, 4, 5]
+```
+
+## Extension Registration
+
+Extensions are automatically registered on import:
+
+```python
+# From src/lodum/__init__.py
+try:
+    from .extensions import numpy as ext_numpy
+    ext_numpy.register()
+except ImportError:
+    pass
+
+try:
+    from .extensions import pandas as ext_pandas
+    ext_pandas.register()
+except ImportError:
+    pass
+
+try:
+    from .extensions import polars as ext_polars
+    ext_polars.register()
+except ImportError:
+    pass
+```
+
+This means extensions "just work" when the libraries are installed - no additional configuration needed.
+
+## Custom Extensions
+
+You can create your own type handlers using the same pattern:
+
+```python
+from lodum.registry import TypeHandler, registry
+from lodum.core import Dumper, Loader
+from typing import Any, Dict, Optional, Type
+
+# Define your custom type
+class CustomArray:
+    def __init__(self, data: list):
+        self.data = data
+
+# Define handlers
+def dump_custom_array(obj: Any, dumper: Dumper, depth: int, seen: Optional[set]) -> Any:
+    from lodum.internal import dump
+    return dump(obj.data, dumper, depth + 1, seen)
+
+def load_custom_array(
+    cls: Type[Any], loader: Loader, path: Optional[str] = None, depth: int = 0
+) -> Any:
+    from lodum.internal import load
+    data = load(list, loader, path, depth + 1)
+    return CustomArray(data)
+
+def schema_custom_array(
+    t: Type[Any], depth: int, visited: Optional[set]
+) -> Dict[str, Any]:
+    return {"type": "array"}
+
+# Register the handler
+registry.register(
+    CustomArray,
+    TypeHandler(dump_custom_array, load_custom_array, schema_custom_array)
+)
+```
+
+## Format Support
+
+All extensions work seamlessly across all Lodum formats:
+
+<CodeGroup>
+```python JSON
+from lodum import json
+import numpy as np
+
+array = np.array([1, 2, 3])
+json_str = json.dumps(array)
+```
+
+```python YAML
+from lodum import yaml
+import pandas as pd
+
+df = pd.DataFrame({'a': [1, 2, 3]})
+yaml_str = yaml.dumps(df)
+```
+
+```python MessagePack
+from lodum import msgpack
+import polars as pl
+
+df = pl.DataFrame({'a': [1, 2, 3]})
+msgpack_bytes = msgpack.dumps(df)
+```
+</CodeGroup>
+
+## Performance Considerations
+
+<AccordionGroup>
+  <Accordion title="NumPy Arrays">
+    NumPy arrays use `tolist()` which creates a Python list copy. For very large arrays, consider:
+    - Using binary formats (MsgPack, CBOR) for better performance
+    - Splitting large arrays into chunks
+    - Using specialized formats like HDF5 for persistence
+  </Accordion>
+
+  <Accordion title="Pandas DataFrames">
+    The `records` orientation creates a list of dictionaries. For large DataFrames:
+    - Consider using Parquet or Feather for efficient storage
+    - Use streaming serialization for memory efficiency
+    - Filter unnecessary columns before serialization
+  </Accordion>
+
+  <Accordion title="Polars DataFrames">
+    Polars uses column-oriented serialization which is efficient for:
+    - DataFrames with many rows but few columns
+    - Homogeneous data types per column
+    - Direct integration with columnar formats
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Basic Usage" icon="book-open" href="/guides/basic-usage">
+    Return to basic usage patterns
+  </Card>
+  <Card title="Advanced Features" icon="wand-magic-sparkles" href="/guides/advanced-features">
+    Explore field customization and validation
+  </Card>
+</CardGroup>

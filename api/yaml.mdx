@@ -1,0 +1,228 @@
+---
+title: lodum.yaml
+description: YAML serialization API for Lodum
+---
+
+The `lodum.yaml` module provides YAML serialization and deserialization for lodum-enabled classes with support for multi-document streams.
+
+## Installation
+
+Requires `ruamel.yaml`. Install with:
+
+```bash
+pip install lodum[yaml]
+```
+
+## Functions
+
+### dump
+
+```python
+def dump(
+    obj: Any,
+    target: Optional[Union[IO[str], Path]] = None,
+    **kwargs
+) -> Optional[str]
+```
+
+Encodes a Python object to YAML.
+
+<ParamField path="obj" type="Any" required>
+  The object to encode.
+</ParamField>
+
+<ParamField path="target" type="Optional[Union[IO[str], Path]]">
+  Optional file-like object or Path to write to.
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional arguments for `yaml.dump`.
+</ParamField>
+
+**Returns:** The YAML string if `target` is `None`, otherwise `None`.
+
+**Raises:** `ImportError` if `ruamel.yaml` is not installed.
+
+**Example:**
+
+```python
+import lodum
+from lodum import yaml
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+person = Person(name="Alice", age=30)
+
+# Serialize to string
+yaml_str = yaml.dump(person)
+
+# Serialize to file
+yaml.dump(person, Path("person.yaml"))
+```
+
+---
+
+### dumps
+
+```python
+def dumps(obj: Any, **kwargs) -> str
+```
+
+Legacy alias for `dump(obj)`.
+
+<ParamField path="obj" type="Any" required>
+  The object to encode.
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional arguments for `yaml.dump`.
+</ParamField>
+
+**Returns:** The YAML string.
+
+---
+
+### load
+
+```python
+def load(
+    cls: Type[T],
+    source: Union[str, IO[Any], Path],
+    max_size: int = DEFAULT_MAX_SIZE
+) -> T
+```
+
+Decodes YAML from a string, stream, or file into a Python object.
+
+<ParamField path="cls" type="Type[T]" required>
+  The class to instantiate.
+</ParamField>
+
+<ParamField path="source" type="Union[str, IO[Any], Path]" required>
+  YAML string, file-like object, or Path.
+</ParamField>
+
+<ParamField path="max_size" type="int" default="DEFAULT_MAX_SIZE">
+  Maximum allowed size for string input.
+</ParamField>
+
+**Returns:** An instance of `cls`.
+
+**Raises:**
+- `ImportError` if `ruamel.yaml` is not installed.
+- `DeserializationError` if the input is invalid or exceeds `max_size`.
+
+**Example:**
+
+```python
+import lodum
+from lodum import yaml
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+# Load from string
+yaml_str = "name: Alice\nage: 30"
+person = yaml.load(Person, yaml_str)
+
+# Load from file
+person = yaml.load(Person, Path("person.yaml"))
+```
+
+---
+
+### loads
+
+```python
+def loads(cls: Type[T], yaml_string: str, **kwargs) -> T
+```
+
+Legacy alias for `load(cls, source)`.
+
+<ParamField path="cls" type="Type[T]" required>
+  The class to instantiate.
+</ParamField>
+
+<ParamField path="yaml_string" type="str" required>
+  YAML string to parse.
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional arguments (e.g., `max_size`).
+</ParamField>
+
+**Returns:** An instance of `cls`.
+
+---
+
+### stream
+
+```python
+def stream(cls: Type[T], source: Union[IO[Any], Path]) -> Iterator[T]
+```
+
+Lazily decodes a stream of YAML documents.
+
+<ParamField path="cls" type="Type[T]" required>
+  The class to instantiate for each item.
+</ParamField>
+
+<ParamField path="source" type="Union[IO[Any], Path]" required>
+  A stream, file-like object, or Path.
+</ParamField>
+
+**Returns:** An iterator yielding instances of `cls`.
+
+**Raises:** `ImportError` if `ruamel.yaml` is not installed.
+
+**Example:**
+
+```python
+import lodum
+from lodum import yaml
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+# Stream from multi-document YAML file
+for person in yaml.stream(Person, Path("people.yaml")):
+    print(person.name, person.age)
+```
+
+---
+
+### schema
+
+```python
+def schema(cls: Type[Any]) -> Dict[str, Any]
+```
+
+Generates a JSON Schema for a given lodum-enabled class.
+
+<ParamField path="cls" type="Type[Any]" required>
+  The lodum-enabled class.
+</ParamField>
+
+**Returns:** A dictionary representing the JSON Schema.
+
+**Example:**
+
+```python
+import lodum
+from lodum import yaml
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+schema_dict = yaml.schema(Person)
+print(schema_dict)
+```

@@ -1,0 +1,551 @@
+---
+title: Migration Guide
+description: Migrating to Lodum from other serialization libraries
+---
+
+This guide helps you migrate from other popular Python serialization libraries to Lodum, and documents changes between Lodum versions.
+
+## Migrating Between Lodum Versions
+
+### Exception Standardization (v0.2.0)
+
+In versions prior to v0.2.0, the YAML and Pickle loaders raised `TypeError` when a field's type did not match the expected type during deserialization. This has been standardized to `lodum.exception.DeserializationError` to match the behavior of other formats like JSON and MsgPack.
+
+**Before (v0.1.x):**
+```python
+try:
+    lodum.yaml.loads(MyClass, bad_data)
+except TypeError:
+    # handle error
+    pass
+```
+
+**After (v0.2.0+):**
+```python
+from lodum.exception import DeserializationError
+
+try:
+    lodum.yaml.loads(MyClass, bad_data)
+except DeserializationError:
+    # handle error
+    pass
+```
+
+## Key Differences from Other Libraries
+
+Lodum is inspired by Rust's `serde` framework. Its primary differences from other Python libraries are:
+
+1. **Format Agnostic**: Lodum separates the definition of your data structure (using `@lodum`) from the data format (JSON, YAML, TOML, MsgPack, etc.).
+2. **Bytecode Compilation**: Lodum generates specialized Python bytecode for your classes at runtime. This provides performance comparable to hand-written code while remaining pure Python.
+3. **`__init__`-Centric**: Lodum uses your class's `__init__` method and its type hints as the source of truth for the data structure. This ensures that your objects are always instantiated through their standard constructor.
+
+## Migrating from Pydantic
+
+Pydantic is a popular library that uses `BaseModel` and class attributes to define data structures.
+
+### Class Definition
+
+**Pydantic:**
+```python
+from pydantic import BaseModel
+
+class User(BaseModel):
+    id: int
+    username: str
+    email: str | None = None
+```
+
+**Lodum:**
+```python
+from lodum import lodum
+from typing import Optional
+
+@lodum
+class User:
+    def __init__(self, id: int, username: str, email: Optional[str] = None):
+        self.id = id
+        self.username = username
+        self.email = email
+```
+
+<Note>
+You can also use `@dataclass` with `@lodum` for a more concise syntax:
+
+```python
+from dataclasses import dataclass
+from lodum import lodum
+
+@lodum
+@dataclass
+class User:
+    id: int
+    username: str
+    email: str | None = None
+```
+</Note>
+
+### Serialization
+
+**Pydantic:**
+```python
+user = User(id=1, username="alice", email="alice@example.com")
+user_dict = user.model_dump()
+user_json = user.model_dump_json()
+```
+
+**Lodum:**
+```python
+from lodum import json
+
+user = User(id=1, username="alice", email="alice@example.com")
+user_json = json.dumps(user)
+
+# If you need a dict, you can use the internal API:
+from lodum.internal import dump
+from lodum.core import BaseDumper
+user_dict = dump(user, BaseDumper())
+```
+
+### Deserialization
+
+**Pydantic:**
+```python
+user = User.model_validate(data_dict)
+user = User.model_validate_json(data_json)
+```
+
+**Lodum:**
+```python
+from lodum import json
+
+user = json.loads(User, data_json)
+
+# From a dict:
+from lodum.internal import load
+from lodum.json import JsonLoader
+user = load(User, JsonLoader(data_dict))
+```
+
+### Field Customization
+
+**Pydantic:**
+```python
+from pydantic import BaseModel, Field
+
+class User(BaseModel):
+    user_id: int = Field(alias="id")
+    password: str = Field(exclude=True)
+```
+
+**Lodum:**
+```python
+from lodum import lodum, field
+
+@lodum
+class User:
+    def __init__(
+        self,
+        user_id: int = field(rename="id"),
+        password: str = field(skip_serializing=True)
+    ):
+        self.user_id = user_id
+        self.password = password
+```
+
+### Validation
+
+**Pydantic:**
+```python
+from pydantic import BaseModel, field_validator
+
+class User(BaseModel):
+    age: int
+    
+    @field_validator('age')
+    def validate_age(cls, v):
+        if v < 0:
+            raise ValueError('Age must be positive')
+        return v
+```
+
+**Lodum:**
+```python
+from lodum import lodum, field
+from lodum.validators import Range
+
+@lodum
+class User:
+    def __init__(self, age: int = field(validate=Range(min=0))):
+        self.age = age
+```
+
+## Migrating from Marshmallow
+
+Marshmallow uses separate `Schema` classes to define how data is serialized and deserialized.
+
+### Definition and Usage
+
+**Marshmallow:**
+```python
+from marshmallow import Schema, fields, post_load
+
+class User:
+    def __init__(self, id, name):
+        self.id = id
+        self.name = name
+
+class UserSchema(Schema):
+    id = fields.Int(data_key="user_id")
+    name = fields.Str()
+    
+    @post_load
+    def make_user(self, data, **kwargs):
+        return User(**data)
+
+schema = UserSchema()
+result = schema.load({"user_id": 1, "name": "Alice"})
+```
+
+**Lodum:**
+```python
+from lodum import lodum, field, json
+
+@lodum
+class User:
+    def __init__(self, id: int = field(rename="user_id"), name: str = ""):
+        self.id = id
+        self.name = name
+
+user = json.loads(User, '{"user_id": 1, "name": "Alice"}')
+```
+
+Lodum eliminates the need for a separate Schema class and the `@post_load` boilerplate.
+
+### Nested Objects
+
+**Marshmallow:**
+```python
+class AddressSchema(Schema):
+    street = fields.Str()
+    city = fields.Str()
+
+class UserSchema(Schema):
+    name = fields.Str()
+    address = fields.Nested(AddressSchema)
+```
+
+**Lodum:**
+```python
+from lodum import lodum
+
+@lodum
+class Address:
+    def __init__(self, street: str, city: str):
+        self.street = street
+        self.city = city
+
+@lodum
+class User:
+    def __init__(self, name: str, address: Address):
+        self.name = name
+        self.address = address
+```
+
+Nesting is automatic in Lodum - just use the type hint!
+
+## Migrating from Dataclasses + Mashumaro/Dacite
+
+If you are already using `dataclasses` with a library like `mashumaro`, the transition to Lodum is very smooth.
+
+**Mashumaro:**
+```python
+from dataclasses import dataclass
+from mashumaro import DataClassJSONMixin
+
+@dataclass
+class Point(DataClassJSONMixin):
+    x: int
+    y: int
+
+point = Point(1, 2)
+json_str = point.to_json()
+restored = Point.from_json(json_str)
+```
+
+**Lodum:**
+```python
+from dataclasses import dataclass
+from lodum import lodum, json
+
+@lodum
+@dataclass
+class Point:
+    x: int
+    y: int
+
+point = Point(1, 2)
+json_str = json.dumps(point)
+restored = json.loads(Point, json_str)
+```
+
+Lodum offers a similar performance profile to `mashumaro` through bytecode generation, but provides a more unified interface for multiple binary and text formats out of the box.
+
+### Multiple Format Support
+
+One key advantage of Lodum:
+
+**Mashumaro (requires different mixins):**
+```python
+from mashumaro import DataClassJSONMixin
+from mashumaro.msgpack import DataClassMessagePackMixin
+
+# Need separate classes or multiple inheritance
+@dataclass
+class Point(DataClassJSONMixin, DataClassMessagePackMixin):
+    x: int
+    y: int
+```
+
+**Lodum (one decorator, all formats):**
+```python
+from lodum import lodum, json, msgpack, yaml, toml
+
+@lodum
+@dataclass
+class Point:
+    x: int
+    y: int
+
+# All formats work automatically
+json_data = json.dumps(point)
+msgpack_data = msgpack.dumps(point)
+yaml_data = yaml.dumps(point)
+toml_data = toml.dumps(point)
+```
+
+## Migrating from Attrs + Cattrs
+
+`attrs` is an alternative to `dataclasses`, and `cattrs` handles the conversion to/from structured data.
+
+**Attrs/Cattrs:**
+```python
+import attr
+import cattr
+
+@attr.s
+class User:
+    id = attr.ib(type=int)
+    name = attr.ib(type=str)
+
+user = cattr.structure({"id": 1, "name": "Alice"}, User)
+data = cattr.unstructure(user)
+```
+
+**Lodum:**
+```python
+from lodum import lodum, json
+
+@lodum
+class User:
+    def __init__(self, id: int, name: str):
+        self.id = id
+        self.name = name
+
+user = json.loads(User, '{"id": 1, "name": "Alice"}')
+data = json.dumps(user)
+```
+
+While `cattrs` is very flexible, Lodum provides a more integrated experience with direct support for various wire formats.
+
+### Custom Converters
+
+**Cattrs:**
+```python
+import cattr
+from datetime import datetime
+
+converter = cattr.Converter()
+converter.register_structure_hook(
+    datetime,
+    lambda v, _: datetime.fromisoformat(v)
+)
+converter.register_unstructure_hook(
+    datetime,
+    lambda v: v.isoformat()
+)
+```
+
+**Lodum:**
+```python
+from lodum import lodum
+from datetime import datetime
+
+# datetime is supported out of the box!
+@lodum
+class Event:
+    def __init__(self, name: str, timestamp: datetime):
+        self.name = name
+        self.timestamp = timestamp
+
+# Or register custom types using the registry:
+from lodum.core import get_context
+from lodum.registry import TypeHandler
+
+def dump_custom(obj, dumper, depth, seen):
+    return str(obj)
+
+def load_custom(cls, loader, path, depth):
+    return cls(loader.load_str())
+
+get_context().registry.register(
+    MyCustomType,
+    TypeHandler(dump_custom, load_custom, lambda t: {"type": "string"})
+)
+```
+
+## Migrating from JSON/Pickle Standard Library
+
+If you're currently using Python's built-in `json` or `pickle` modules directly:
+
+**Standard Library:**
+```python
+import json
+
+class User:
+    def __init__(self, id, name):
+        self.id = id
+        self.name = name
+
+# Manual serialization
+user = User(1, "Alice")
+data = json.dumps({"id": user.id, "name": user.name})
+
+# Manual deserialization
+loaded = json.loads(data)
+user = User(loaded["id"], loaded["name"])
+```
+
+**Lodum:**
+```python
+from lodum import lodum, json
+
+@lodum
+class User:
+    def __init__(self, id: int, name: str):
+        self.id = id
+        self.name = name
+
+# Automatic serialization
+user = User(1, "Alice")
+data = json.dumps(user)
+
+# Automatic deserialization
+user = json.loads(User, data)
+```
+
+## Performance Comparison
+
+See the [Performance Benchmarks](/advanced/performance) page for detailed comparisons. Summary:
+
+- **Lodum vs Marshmallow**: 2x faster on average
+- **Lodum vs Pydantic v2**: Pydantic is faster due to Rust core, but Lodum is competitive in pure Python
+- **Lodum vs Standard Library**: Similar performance for simple objects, better for complex nested structures
+
+## Feature Comparison
+
+| Feature | Lodum | Pydantic | Marshmallow | Cattrs |
+| :--- | :---: | :---: | :---: | :---: |
+| Multiple formats | ✅ | ❌ | ❌ | ✅ |
+| Type validation | ✅ | ✅ | ✅ | ✅ |
+| Custom validators | ✅ | ✅ | ✅ | ✅ |
+| Field renaming | ✅ | ✅ | ✅ | ✅ |
+| Streaming support | ✅ | ❌ | ❌ | ❌ |
+| Schema generation | ✅ | ✅ | ✅ | ❌ |
+| Pure Python | ✅ | ❌ | ✅ | ✅ |
+| WASM support | ✅ | ❌ | ✅ | ✅ |
+| Dataclass support | ✅ | ✅ | ✅ | ✅ |
+
+## Common Migration Patterns
+
+### Pattern 1: Adding Type Hints
+
+Many older codebases don't have type hints. You'll need to add them:
+
+```python
+# Before
+class User:
+    def __init__(self, id, name, email=None):
+        self.id = id
+        self.name = name
+        self.email = email
+
+# After
+from lodum import lodum
+from typing import Optional
+
+@lodum
+class User:
+    def __init__(self, id: int, name: str, email: Optional[str] = None):
+        self.id = id
+        self.name = name
+        self.email = email
+```
+
+### Pattern 2: Replacing Custom Serialization Logic
+
+```python
+# Before
+class User:
+    def __init__(self, id, name):
+        self.id = id
+        self.name = name
+    
+    def to_dict(self):
+        return {"id": self.id, "name": self.name}
+    
+    @classmethod
+    def from_dict(cls, data):
+        return cls(data["id"], data["name"])
+
+# After
+from lodum import lodum
+
+@lodum
+class User:
+    def __init__(self, id: int, name: str):
+        self.id = id
+        self.name = name
+
+# Use lodum.json, lodum.yaml, etc. instead
+```
+
+### Pattern 3: Gradual Migration
+
+You can migrate incrementally:
+
+```python
+# Old code still works
+old_user_dict = {"id": 1, "name": "Alice"}
+
+# New code uses Lodum
+from lodum import lodum, json
+
+@lodum
+class User:
+    def __init__(self, id: int, name: str):
+        self.id = id
+        self.name = name
+
+# Can still construct from dict using internal API
+from lodum.json import JsonLoader
+from lodum.internal import load
+user = load(User, JsonLoader(old_user_dict))
+```
+
+## Getting Help
+
+If you encounter issues during migration:
+
+1. Check the [API Reference](/api/lodum-decorator) for detailed documentation
+2. Look at the [Guides](/guides/basic-usage) for common patterns
+3. Open an issue on [GitHub](https://github.com/webmaven/lodum) with your migration question

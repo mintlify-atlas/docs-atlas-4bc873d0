@@ -1,0 +1,441 @@
+---
+title: 'Dumper Protocol'
+description: 'Protocol definition for custom serialization formats'
+---
+
+## Overview
+
+The `Dumper` protocol defines the interface for implementing custom serialization formats in Lodum. By implementing this protocol, you can create dumpers for any output format (JSON, MessagePack, TOML, etc.).
+
+Lodum provides two base implementations:
+- `BaseDumper` - In-memory dumper that builds data structures
+- `StreamingDumper` - Base class for dumpers that write directly to IO targets
+
+## Dumper Protocol
+
+The complete protocol definition from `lodum.core`:
+
+```python
+from typing import Any, Callable, Dict, List, Optional, Protocol, Type
+
+class Dumper(Protocol):
+    """Defines the interface for a data format dumper (encoder)."""
+
+    def dump_int(
+        self, value: int, depth: int = 0, seen: Optional[set] = None
+    ) -> Any: ...
+
+    def dump_str(
+        self, value: str, depth: int = 0, seen: Optional[set] = None
+    ) -> Any: ...
+
+    def dump_float(
+        self, value: float, depth: int = 0, seen: Optional[set] = None
+    ) -> Any: ...
+
+    def dump_bool(
+        self, value: bool, depth: int = 0, seen: Optional[set] = None
+    ) -> Any: ...
+
+    def dump_bytes(
+        self, value: bytes, depth: int = 0, seen: Optional[set] = None
+    ) -> Any: ...
+
+    def dump_none(self, depth: int = 0, seen: Optional[set] = None) -> Any: ...
+
+    def dump_list(
+        self, value: List[Any], depth: int = 0, seen: Optional[set] = None
+    ) -> Any: ...
+
+    def dump_dict(
+        self, value: Dict[str, Any], depth: int = 0, seen: Optional[set] = None
+    ) -> Any: ...
+
+    def begin_struct(self, cls: Type) -> Any: ...
+
+    def end_struct(self) -> Any: ...
+
+    def field(
+        self,
+        name: str,
+        value: Any,
+        handler: Callable[[Any, "Dumper", int, Optional[set]], Any],
+        depth: int = 0,
+        seen: Optional[set] = None,
+    ) -> None:
+        """Processes a single struct field."""
+        ...
+
+    def begin_list(self) -> None:
+        """Starts a sequence/list."""
+        ...
+
+    def end_list(self) -> Any:
+        """Ends a sequence/list."""
+        ...
+
+    def list_item(
+        self,
+        value: Any,
+        handler: Callable[[Any, "Dumper", int, Optional[set]], Any],
+        depth: int = 0,
+        seen: Optional[set] = None,
+    ) -> None:
+        """Processes a single list item."""
+        ...
+```
+
+## Method Reference
+
+### Primitive Type Methods
+
+These methods handle serialization of primitive Python types:
+
+#### dump_int()
+
+<ParamField path="value" type="int" required>
+  The integer value to serialize
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth for cycle detection
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" default="None">
+  Set of already-seen object IDs for cycle detection
+</ParamField>
+
+#### dump_str()
+
+<ParamField path="value" type="str" required>
+  The string value to serialize
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" default="None">
+  Set of already-seen object IDs
+</ParamField>
+
+#### dump_float()
+
+<ParamField path="value" type="float" required>
+  The float value to serialize
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" default="None">
+  Set of already-seen object IDs
+</ParamField>
+
+#### dump_bool()
+
+<ParamField path="value" type="bool" required>
+  The boolean value to serialize
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" default="None">
+  Set of already-seen object IDs
+</ParamField>
+
+#### dump_bytes()
+
+<ParamField path="value" type="bytes" required>
+  The bytes value to serialize
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" default="None">
+  Set of already-seen object IDs
+</ParamField>
+
+#### dump_none()
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" default="None">
+  Set of already-seen object IDs
+</ParamField>
+
+### Collection Methods
+
+#### dump_list()
+
+Serializes a complete list. For streaming dumpers, prefer using `begin_list()`, `list_item()`, and `end_list()`.
+
+<ParamField path="value" type="List[Any]" required>
+  The list to serialize
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" default="None">
+  Set of already-seen object IDs
+</ParamField>
+
+#### dump_dict()
+
+Serializes a complete dictionary. For streaming dumpers, prefer using struct methods.
+
+<ParamField path="value" type="Dict[str, Any]" required>
+  The dictionary to serialize
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" default="None">
+  Set of already-seen object IDs
+</ParamField>
+
+### Struct/Object Methods
+
+#### begin_struct()
+
+Called when starting to serialize a structured object (class instance).
+
+<ParamField path="cls" type="Type" required>
+  The class type being serialized
+</ParamField>
+
+**Returns:** Any temporary state needed during struct serialization
+
+#### end_struct()
+
+Called when finished serializing a structured object.
+
+**Returns:** The serialized representation of the struct
+
+#### field()
+
+Processes a single field within a struct.
+
+<ParamField path="name" type="str" required>
+  The field name
+</ParamField>
+
+<ParamField path="value" type="Any" required>
+  The field value to serialize
+</ParamField>
+
+<ParamField path="handler" type="Callable" required>
+  The handler function to serialize this field's value
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" default="None">
+  Set of already-seen object IDs
+</ParamField>
+
+### List Item Methods
+
+#### begin_list()
+
+Called when starting to serialize a list in streaming fashion.
+
+#### end_list()
+
+Called when finished serializing a list.
+
+**Returns:** The serialized representation of the list
+
+#### list_item()
+
+Processes a single item within a list.
+
+<ParamField path="value" type="Any" required>
+  The list item to serialize
+</ParamField>
+
+<ParamField path="handler" type="Callable" required>
+  The handler function to serialize this item's value
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" default="None">
+  Set of already-seen object IDs
+</ParamField>
+
+## BaseDumper
+
+A base implementation for in-memory dumpers that build complete data structures.
+
+```python
+from lodum.core import BaseDumper
+
+class BaseDumper:
+    def __init__(self) -> None:
+        self._struct_stack: List[Dict[str, Any]] = []
+        self._list_stack: List[List[Any]] = []
+```
+
+### Key Features
+
+- Maintains internal stacks for nested structures
+- Default primitive methods return values unchanged
+- Automatically manages struct and list building
+- Suitable for formats that build complete structures in memory (JSON, dict, etc.)
+
+## StreamingDumper
+
+Base class for dumpers that write directly to an IO target with minimal memory usage.
+
+```python
+from typing import IO
+from lodum.core import StreamingDumper
+
+class StreamingDumper(Dumper):
+    def __init__(self, target: IO[Any]) -> None:
+        self._target = target
+        self._depth = 0
+        self._first_item_stack: List[bool] = [True]
+
+    def write_raw(self, chunk: Any) -> None:
+        """Writes pre-encoded data directly to the stream."""
+        self._target.write(chunk)
+```
+
+### Key Features
+
+- Writes directly to IO target (file, socket, etc.)
+- Maintains depth tracking
+- Tracks first-item status for formatting (commas, etc.)
+- O(1) memory usage for large structures
+- Suitable for streaming formats (NDJSON, streaming JSON, etc.)
+
+## Implementation Examples
+
+### Simple In-Memory Dumper
+
+```python
+from lodum.core import BaseDumper
+
+class DictDumper(BaseDumper):
+    """Dumps to Python dict/list structures."""
+
+    def dump_int(self, value: int, depth: int = 0, seen = None):
+        return value
+
+    def dump_str(self, value: str, depth: int = 0, seen = None):
+        return value
+
+    def dump_float(self, value: float, depth: int = 0, seen = None):
+        return value
+
+    def dump_bool(self, value: bool, depth: int = 0, seen = None):
+        return value
+
+    def dump_none(self, depth: int = 0, seen = None):
+        return None
+```
+
+### Streaming JSON Dumper
+
+```python
+import json
+from typing import Any, IO
+from lodum.core import StreamingDumper
+
+class StreamingJSONDumper(StreamingDumper):
+    def __init__(self, target: IO[str]):
+        super().__init__(target)
+
+    def dump_str(self, value: str, depth: int = 0, seen = None):
+        self.write_raw(json.dumps(value))
+
+    def dump_int(self, value: int, depth: int = 0, seen = None):
+        self.write_raw(str(value))
+
+    def begin_struct(self, cls):
+        super().begin_struct(cls)
+        self.write_raw("{")
+
+    def end_struct(self):
+        self.write_raw("}")
+        return super().end_struct()
+
+    def field(self, name: str, value: Any, handler, depth: int = 0, seen = None):
+        if not self._first_item_stack[-1]:
+            self.write_raw(",")
+        self._first_item_stack[-1] = False
+        self.write_raw(f'"{name}":')
+        handler(value, self, depth, seen)
+```
+
+### Custom Format Example
+
+```python
+from lodum.core import BaseDumper
+
+class TOMLStyleDumper(BaseDumper):
+    """Example dumper for TOML-like format."""
+
+    def __init__(self):
+        super().__init__()
+        self.output_lines = []
+
+    def dump_str(self, value: str, depth: int = 0, seen = None):
+        return f'"{value}"'
+
+    def dump_int(self, value: int, depth: int = 0, seen = None):
+        return str(value)
+
+    def field(self, name: str, value: Any, handler, depth: int = 0, seen = None):
+        result = handler(value, self, depth, seen)
+        self.output_lines.append(f"{name} = {result}")
+```
+
+## Usage with Lodum
+
+```python
+from lodum import lodum, dump
+from lodum.core import BaseDumper
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+person = Person(name="Alice", age=30)
+
+# Use custom dumper
+dumper = DictDumper()
+result = dump(person, dumper)
+print(result)  # {'name': 'Alice', 'age': 30}
+```
+
+## Best Practices
+
+1. **Protocol Compliance**: Ensure all methods accept `depth` and `seen` parameters
+2. **Streaming Safety**: Use orchestration methods (`begin_struct`, `field`, etc.) for O(1) memory
+3. **Error Handling**: Raise appropriate exceptions for unsupported types
+4. **Depth Tracking**: Implement cycle detection using `depth` and `seen` parameters
+5. **Thread Safety**: Consider thread-safety if dumper will be used concurrently
+
+## See Also
+
+- [Loader Protocol](/api/loader-protocol) - Counterpart for deserialization
+- [Implementing New Formats](/advanced/implementing-formats) - Building complete format implementations

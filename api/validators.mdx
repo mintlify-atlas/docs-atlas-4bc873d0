@@ -1,0 +1,227 @@
+---
+title: 'Validators'
+description: 'Validator classes for runtime value validation'
+---
+
+## Overview
+
+Lodum provides a set of validator classes for runtime validation of deserialized values. All validators inherit from the base `Validator` class and raise `DeserializationError` when validation fails.
+
+## Validator Base Class
+
+The abstract base class for all validators.
+
+```python
+from lodum.validators import Validator
+
+class Validator:
+    def __call__(self, value: Any) -> None:
+        raise NotImplementedError
+```
+
+## Range
+
+Validates that a value falls within a specified numeric range.
+
+```python
+from lodum.validators import Range
+```
+
+### Constructor
+
+<ParamField path="min" type="Optional[Any]" default="None">
+  Minimum acceptable value (inclusive). If `None`, no minimum is enforced.
+</ParamField>
+
+<ParamField path="max" type="Optional[Any]" default="None">
+  Maximum acceptable value (inclusive). If `None`, no maximum is enforced.
+</ParamField>
+
+### Behavior
+
+Raises `DeserializationError` if:
+- Value is less than `min` (when `min` is not `None`)
+- Value is greater than `max` (when `max` is not `None`)
+
+### Example
+
+```python
+from lodum import lodum, Field
+from lodum.validators import Range
+
+@lodum
+class Product:
+    price: float = Field(validators=[Range(min=0.0, max=10000.0)])
+    quantity: int = Field(validators=[Range(min=1)])
+
+# Valid
+product = Product(price=99.99, quantity=5)
+
+# Raises DeserializationError: "Value -10 is less than minimum 0.0"
+product = Product(price=-10, quantity=5)
+
+# Raises DeserializationError: "Value 15000 is greater than maximum 10000.0"
+product = Product(price=15000, quantity=5)
+```
+
+## Length
+
+Validates the length of sequences, strings, or any object supporting `len()`.
+
+```python
+from lodum.validators import Length
+```
+
+### Constructor
+
+<ParamField path="min" type="Optional[int]" default="None">
+  Minimum acceptable length (inclusive). If `None`, no minimum is enforced.
+</ParamField>
+
+<ParamField path="max" type="Optional[int]" default="None">
+  Maximum acceptable length (inclusive). If `None`, no maximum is enforced.
+</ParamField>
+
+### Behavior
+
+Raises `DeserializationError` if:
+- The value does not support `len()` operation
+- Length is less than `min` (when `min` is not `None`)
+- Length is greater than `max` (when `max` is not `None`)
+
+### Example
+
+```python
+from lodum import lodum, Field
+from lodum.validators import Length
+
+@lodum
+class User:
+    username: str = Field(validators=[Length(min=3, max=20)])
+    tags: list[str] = Field(validators=[Length(max=5)])
+
+# Valid
+user = User(username="alice", tags=["python", "coding"])
+
+# Raises DeserializationError: "Length 2 is less than minimum 3"
+user = User(username="ab", tags=[])
+
+# Raises DeserializationError: "Length 6 is greater than maximum 5"
+user = User(username="alice", tags=["a", "b", "c", "d", "e", "f"])
+```
+
+## Match
+
+Validates that a string value matches a regular expression pattern.
+
+```python
+from lodum.validators import Match
+```
+
+### Constructor
+
+<ParamField path="pattern" type="str" required>
+  Regular expression pattern to match against. Uses Python's `re` module.
+</ParamField>
+
+### Behavior
+
+Raises `DeserializationError` if:
+- Value is not a string
+- Value does not match the compiled regex pattern
+
+### Example
+
+```python
+from lodum import lodum, Field
+from lodum.validators import Match
+
+@lodum
+class Contact:
+    email: str = Field(validators=[Match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')])
+    phone: str = Field(validators=[Match(r'^\d{3}-\d{3}-\d{4}$')])
+
+# Valid
+contact = Contact(email="user@example.com", phone="555-123-4567")
+
+# Raises DeserializationError: "Value 'invalid-email' does not match pattern..."
+contact = Contact(email="invalid-email", phone="555-123-4567")
+
+# Raises DeserializationError: value is not a string
+contact = Contact(email=12345, phone="555-123-4567")
+```
+
+## OneOf
+
+Validates that a value is one of a predefined set of acceptable values.
+
+```python
+from lodum.validators import OneOf
+```
+
+### Constructor
+
+<ParamField path="options" type="Container[Any]" required>
+  A container of acceptable values. Any type supporting the `in` operator (list, set, tuple, etc.) can be used.
+</ParamField>
+
+### Behavior
+
+Raises `DeserializationError` if the value is not in the `options` container.
+
+### Example
+
+```python
+from lodum import lodum, Field
+from lodum.validators import OneOf
+
+@lodum
+class Order:
+    status: str = Field(validators=[OneOf(["pending", "processing", "shipped", "delivered"])])
+    priority: int = Field(validators=[OneOf({1, 2, 3})])
+
+# Valid
+order = Order(status="pending", priority=1)
+
+# Raises DeserializationError: "Value 'cancelled' is not one of [...]"
+order = Order(status="cancelled", priority=1)
+
+# Raises DeserializationError: "Value 5 is not one of {1, 2, 3}"
+order = Order(status="pending", priority=5)
+```
+
+## Combining Validators
+
+Multiple validators can be applied to a single field:
+
+```python
+from lodum import lodum, Field
+from lodum.validators import Length, Match
+
+@lodum
+class Account:
+    password: str = Field(validators=[
+        Length(min=8, max=128),
+        Match(r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d).*$')  # Must contain uppercase, lowercase, and digit
+    ])
+```
+
+Validators are executed in order, and the first validation failure raises `DeserializationError`.
+
+## Custom Validators
+
+You can create custom validators by subclassing `Validator`:
+
+```python
+from lodum.validators import Validator
+from lodum.exception import DeserializationError
+
+class Even(Validator):
+    def __call__(self, value: int) -> None:
+        if value % 2 != 0:
+            raise DeserializationError(f"Value {value} is not even")
+
+@lodum
+class EvenNumber:
+    value: int = Field(validators=[Even()])
+```

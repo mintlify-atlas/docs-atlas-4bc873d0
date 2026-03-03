@@ -1,0 +1,151 @@
+---
+title: "@lodum"
+description: "Class decorator that enables serialization/deserialization for Python classes"
+---
+
+## Overview
+
+The `@lodum` decorator marks a class as lodum-enabled, allowing it to be serialized to and deserialized from various data formats. When applied, it performs eager analysis of the class structure, processes field metadata, and registers the class for type resolution.
+
+## Signature
+
+```python
+def lodum(
+    cls: Optional[Type[T]] = None,
+    tag: Optional[str] = None,
+    tag_value: Optional[str] = None,
+) -> Any
+```
+
+## Parameters
+
+<ParamField path="cls" type="Type[T] | None" default="None">
+  The class to decorate. When using `@lodum` without parentheses, this is automatically provided. When using `@lodum(tag="...")`, this is `None` and the decorator returns a function.
+</ParamField>
+
+<ParamField path="tag" type="str | None" default="None">
+  Optional tag field name for discriminated unions. When set, this field will be automatically added to serialized output with the value specified in `tag_value`. Useful for polymorphic deserialization.
+</ParamField>
+
+<ParamField path="tag_value" type="str | None" default="None">
+  The value to use for the tag field. Defaults to the class name if not specified. Only used when `tag` is set.
+</ParamField>
+
+## Returns
+
+The decorated class with lodum capabilities enabled.
+
+## Basic Usage
+
+### Simple Decoration
+
+```python
+from lodum import lodum
+
+@lodum
+class User:
+    def __init__(self, name: str, age: int):
+        self.name = name
+        self.age = age
+```
+
+### With Tagged Unions
+
+```python
+from lodum import lodum
+from typing import Union
+
+@lodum(tag="type", tag_value="circle")
+class Circle:
+    def __init__(self, radius: float):
+        self.radius = radius
+
+@lodum(tag="type", tag_value="rectangle")
+class Rectangle:
+    def __init__(self, width: float, height: float):
+        self.width = width
+        self.height = height
+
+@lodum
+class Drawing:
+    def __init__(self, shape: Union[Circle, Rectangle]):
+        self.shape = shape
+
+# Serialized Circle will include: {"type": "circle", "radius": 5.0}
+# Serialized Rectangle will include: {"type": "rectangle", "width": 10.0, "height": 20.0}
+```
+
+## Advanced Usage
+
+### Nested Classes
+
+```python
+from lodum import lodum
+from typing import List
+
+@lodum
+class Address:
+    def __init__(self, street: str, city: str):
+        self.street = street
+        self.city = city
+
+@lodum
+class Person:
+    def __init__(self, name: str, addresses: List[Address]):
+        self.name = name
+        self.addresses = addresses
+```
+
+### With Field Metadata
+
+```python
+from lodum import lodum, field
+
+@lodum
+class Config:
+    def __init__(
+        self,
+        api_key: str = field(rename="apiKey"),
+        debug: bool = field(default=False),
+        max_retries: int = field(default=3, skip_serializing=True)
+    ):
+        self.api_key = api_key
+        self.debug = debug
+        self.max_retries = max_retries
+```
+
+## How It Works
+
+1. **Registration**: The class is registered in the global type registry for forward reference resolution
+2. **Analysis**: Class structure, type hints, and field metadata are analyzed
+3. **Init Wrapping**: The `__init__` method is wrapped to resolve `Field` defaults properly
+4. **Metadata Attachment**: Special attributes are attached:
+   - `_lodum_enabled`: Set to `True`
+   - `_lodum_tag`: The tag field name (if specified)
+   - `_lodum_tag_value`: The tag value (defaults to class name)
+   - `_lodum_fields`: Dict of field metadata (populated during analysis)
+
+## Type Support
+
+The `@lodum` decorator works with:
+
+- Primitive types: `int`, `str`, `float`, `bool`, `bytes`, `None`
+- Collections: `list`, `dict`, `set`, `tuple`, `frozenset`
+- Standard library: `datetime`, `date`, `time`, `timedelta`, `UUID`, `Path`, `Decimal`, `Enum`
+- Typing generics: `Optional`, `Union`, `List`, `Dict`, etc.
+- Nested lodum-enabled classes
+- Forward references (via string annotations)
+
+## Notes
+
+- Classes must have an `__init__` method with type-annotated parameters
+- The decorator performs eager analysis but supports lazy compilation for forward references
+- All fields should be instance attributes assigned in `__init__`
+- The decorator can be used with or without parentheses when no parameters are needed
+
+## See Also
+
+- [field()](/api/field) - Define field-level metadata
+- [asdict()](/api/asdict-fromdict) - Convert objects to dictionaries
+- [fromdict()](/api/asdict-fromdict) - Create objects from dictionaries
+- [schema()](/api/schema) - Generate JSON Schema

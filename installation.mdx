@@ -1,0 +1,133 @@
+---
+title: Installation
+description: Install lodum and its optional dependencies
+---
+
+## Basic installation
+
+Install `lodum` using pip:
+
+```bash
+pip install lodum
+```
+
+This installs the core library with support for JSON and Pickle formats.
+
+## Optional dependencies
+
+lodum provides optional dependencies for additional formats and third-party library integrations.
+
+### Install all optional dependencies
+
+For the complete lodum experience with all formats and integrations:
+
+```bash
+pip install "lodum[all]"
+```
+
+This includes YAML, TOML, binary formats, and support for NumPy, Pandas, and Polars.
+
+### Install specific formats
+
+You can also install support for specific formats individually:
+
+<CodeGroup>
+
+```bash YAML
+pip install "lodum[yaml]"
+```
+
+```bash TOML
+pip install "lodum[toml]"
+```
+
+```bash MessagePack
+pip install "lodum[msgpack]"
+```
+
+```bash CBOR
+pip install "lodum[cbor]"
+```
+
+```bash BSON
+pip install "lodum[bson]"
+```
+
+</CodeGroup>
+
+### Install data science integrations
+
+For working with data science libraries:
+
+<CodeGroup>
+
+```bash NumPy
+pip install "lodum[numpy]"
+```
+
+```bash Pandas
+pip install "lodum[pandas]"
+```
+
+```bash Polars
+pip install "lodum[polars]"
+```
+
+</CodeGroup>
+
+### Streaming support
+
+For lazy streaming deserialization of large JSON arrays:
+
+```bash
+pip install "lodum[ijson]"
+```
+
+## Python version support
+
+lodum supports Python 3.9 and later:
+
+- Python 3.9
+- Python 3.10
+- Python 3.11
+- Python 3.12
+- Python 3.13
+
+<Note>
+  For Python versions before 3.11, the `tomli` package is automatically installed when using `lodum[toml]` or `lodum[all]`.
+</Note>
+
+## Development installation
+
+If you want to contribute to lodum or run the tests, clone the repository and install in development mode:
+
+```bash
+git clone https://github.com/webmaven/lodum.git
+cd lodum
+pip install -e ".[all]"
+```
+
+## WASM/Pyodide support
+
+lodum is fully compatible with Pyodide and WebAssembly environments. All core functionality works in the browser without modification.
+
+<Info>
+  lodum uses a specialized concurrency module that automatically adapts to WASM environments where threading primitives may not be available.
+</Info>
+
+## Verify installation
+
+Verify your installation by running:
+
+```python
+import lodum
+print(lodum.__version__)
+```
+
+You should see the installed version number (e.g., `0.4.0.dev0`).
+
+## Next steps
+
+<Card title="Quick start" icon="rocket" href="/quickstart">
+  Learn how to use lodum with a quick start guide
+</Card>

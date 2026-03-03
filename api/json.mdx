@@ -1,0 +1,236 @@
+---
+title: lodum.json
+description: JSON serialization API for Lodum
+---
+
+The `lodum.json` module provides JSON serialization and deserialization for lodum-enabled classes with support for both in-memory and streaming operations.
+
+## Functions
+
+### dump
+
+```python
+def dump(
+    obj: Any,
+    target: Optional[Union[IO[str], Path]] = None,
+    **kwargs
+) -> Optional[str]
+```
+
+Encodes a Python object to JSON.
+
+<ParamField path="obj" type="Any" required>
+  The object to encode.
+</ParamField>
+
+<ParamField path="target" type="Optional[Union[IO[str], Path]]">
+  Optional file-like object or Path to write to. If provided, uses O(1) streaming mode.
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional arguments for `json.dump(s)` (e.g., `indent`). Note: If target is provided, O(1) streaming is used and some formatting kwargs might be ignored in the current implementation.
+</ParamField>
+
+**Returns:** The JSON string if `target` is `None`, otherwise `None`.
+
+**Example:**
+
+```python
+import lodum
+from lodum import json
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+person = Person(name="Alice", age=30)
+
+# Serialize to string
+json_str = json.dump(person, indent=2)
+
+# Serialize to file
+json.dump(person, Path("person.json"))
+```
+
+---
+
+### dumps
+
+```python
+def dumps(obj: Any, **kwargs) -> str
+```
+
+Legacy alias for `dump(obj)`.
+
+<ParamField path="obj" type="Any" required>
+  The object to encode.
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional arguments for `json.dumps`.
+</ParamField>
+
+**Returns:** The JSON string.
+
+---
+
+### load
+
+```python
+def load(
+    cls: Type[T],
+    source: Union[str, IO[Any], Path],
+    max_size: int = DEFAULT_MAX_SIZE
+) -> T
+```
+
+Decodes JSON from a string, stream, or file into a Python object.
+
+<ParamField path="cls" type="Type[T]" required>
+  The class to instantiate.
+</ParamField>
+
+<ParamField path="source" type="Union[str, IO[Any], Path]" required>
+  JSON string, file-like object, or Path.
+</ParamField>
+
+<ParamField path="max_size" type="int" default="DEFAULT_MAX_SIZE">
+  Maximum allowed size for string input.
+</ParamField>
+
+**Returns:** An instance of `cls`.
+
+**Raises:** `DeserializationError` if the input is invalid or exceeds `max_size`.
+
+**Example:**
+
+```python
+import lodum
+from lodum import json
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+# Load from string
+json_str = '{"name": "Alice", "age": 30}'
+person = json.load(Person, json_str)
+
+# Load from file
+person = json.load(Person, Path("person.json"))
+```
+
+---
+
+### loads
+
+```python
+def loads(cls: Type[T], json_string: str, **kwargs) -> T
+```
+
+Legacy alias for `load(cls, source)`.
+
+<ParamField path="cls" type="Type[T]" required>
+  The class to instantiate.
+</ParamField>
+
+<ParamField path="json_string" type="str" required>
+  JSON string to parse.
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional arguments (e.g., `max_size`).
+</ParamField>
+
+**Returns:** An instance of `cls`.
+
+---
+
+### stream
+
+```python
+def stream(cls: Type[T], source: Union[IO[bytes], Path]) -> Iterator[T]
+```
+
+Lazily decodes a stream of JSON objects into instances of `cls`. Intended for sources containing a top-level array of objects.
+
+<ParamField path="cls" type="Type[T]" required>
+  The class to instantiate for each item.
+</ParamField>
+
+<ParamField path="source" type="Union[IO[bytes], Path]" required>
+  A binary stream, file-like object, or Path to a JSON array.
+</ParamField>
+
+**Returns:** An iterator yielding instances of `cls`.
+
+**Raises:** `RuntimeError` if `ijson` is not installed. Install with: `pip install lodum[ijson]`
+
+**Example:**
+
+```python
+import lodum
+from lodum import json
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+# Stream from file containing JSON array
+for person in json.stream(Person, Path("people.json")):
+    print(person.name, person.age)
+```
+
+---
+
+### load_stream
+
+```python
+def load_stream(cls: Type[T], stream_io: IO[bytes]) -> Iterator[T]
+```
+
+Legacy alias for `stream(cls, source)`.
+
+<ParamField path="cls" type="Type[T]" required>
+  The class to instantiate for each item.
+</ParamField>
+
+<ParamField path="stream_io" type="IO[bytes]" required>
+  A binary stream.
+</ParamField>
+
+**Returns:** An iterator yielding instances of `cls`.
+
+---
+
+### schema
+
+```python
+def schema(cls: Type[Any]) -> Dict[str, Any]
+```
+
+Generates a JSON Schema for a given lodum-enabled class.
+
+<ParamField path="cls" type="Type[Any]" required>
+  The lodum-enabled class.
+</ParamField>
+
+**Returns:** A dictionary representing the JSON Schema.
+
+**Example:**
+
+```python
+import lodum
+from lodum import json
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+schema_dict = json.schema(Person)
+print(schema_dict)
+```

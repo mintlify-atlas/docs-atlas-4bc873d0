@@ -1,0 +1,211 @@
+---
+title: The @lodum Decorator
+description: Learn how to use the @lodum decorator to enable serialization for your Python classes
+---
+
+The `@lodum` decorator is the core annotation that enables your Python classes for serialization and deserialization across multiple formats.
+
+## Basic Usage
+
+Apply the decorator to any class to make it serializable:
+
+```python
+from lodum import lodum
+from dataclasses import dataclass
+
+@lodum
+@dataclass
+class User:
+    name: str
+    age: int
+    is_active: bool
+```
+
+The decorator works with:
+- Regular classes with `__init__` methods
+- `@dataclass` classes
+- Classes with type hints (required)
+
+<Note>
+Type hints are **required** for all fields. The `@lodum` decorator uses them to understand your data structure and generate optimized serialization code.
+</Note>
+
+## How It Works
+
+When you apply `@lodum` to a class, the decorator:
+
+1. **Registers the class** in the global type registry for forward reference resolution
+2. **Wraps `__init__`** to resolve `Field` defaults automatically
+3. **Analyzes the class structure** eagerly to extract field metadata and type information
+4. **Generates optimized bytecode** using an AST compiler for ~64% faster serialization
+
+From `src/lodum/core.py:82-131`:
+
+```python
+def lodum(
+    cls: Optional[T] = None,
+    tag: Optional[str] = None,
+    tag_value: Optional[str] = None,
+) -> Any:
+    """
+    A class decorator that marks a class as lodum-enabled.
+    Field metadata is processed lazily during first serialization/deserialization
+    to correctly handle forward references and circular dependencies.
+    """
+
+    def decorator(c: T) -> T:
+        setattr(c, "_lodum_enabled", True)
+        setattr(c, "_lodum_tag", tag)
+        setattr(c, "_lodum_tag_value", tag_value or c.__name__)
+
+        register_type(c)
+
+        # Wrap __init__ to resolve Field defaults
+        from functools import wraps
+        from .field import Field
+
+        original_init = c.__init__
+
+        @wraps(original_init)
+        def new_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            # Resolve Field defaults if any were left as instance attributes
+            if hasattr(c, "_lodum_fields"):
+                for name in c._lodum_fields:
+                    try:
+                        val = getattr(self, name)
+                        if isinstance(val, Field):
+                            setattr(self, name, val.get_default())
+                    except AttributeError:
+                        continue
+
+        c.__init__ = new_init
+
+        # Analysis is still officially lazy, but we perform it here
+        # to ensure metadata is available for immediate use (e.g. in tests).
+        from .compiler.analyzer import _analyze_class
+
+        _analyze_class(c)
+        return c
+
+    if cls is None:
+        return decorator
+    return decorator(cls)
+```
+
+## Tagged Unions
+
+Use the `tag` parameter to enable discriminated union support for polymorphic types:
+
+```python
+from lodum import lodum, json
+from typing import Union
+
+@lodum(tag="type")
+class Rectangle:
+    def __init__(self, width: int, height: int):
+        self.width = width
+        self.height = height
+
+@lodum(tag="type")
+class Circle:
+    def __init__(self, radius: int):
+        self.radius = radius
+
+@lodum
+class Drawing:
+    def __init__(self, shape: Union[Rectangle, Circle]):
+        self.shape = shape
+```
+
+When serialized, tagged classes include a discriminator field:
+
+```json
+{
+  "type": "Rectangle",
+  "width": 10,
+  "height": 20
+}
+```
+
+### Custom Tag Values
+
+Override the tag value with `tag_value`:
+
+```python
+@lodum(tag="kind", tag_value="rect")
+class Rectangle:
+    def __init__(self, w: int, h: int):
+        self.w = w
+        self.h = h
+
+# Serializes to: {"kind": "rect", "w": 10, "h": 20}
+```
+
+<Info>
+Tagged unions solve the ambiguity problem when deserializing Union types with similar structures. Without tags, lodum tries each type in order and uses the first that succeeds.
+</Info>
+
+## Decorator Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `cls` | `Type[T]` | `None` | The class being decorated (auto-filled) |
+| `tag` | `str \| None` | `None` | Field name for the discriminator tag |
+| `tag_value` | `str \| None` | `cls.__name__` | Value to use for the discriminator |
+
+## Type Signature
+
+```python
+T = TypeVar("T", bound=Type[Any])
+
+def lodum(
+    cls: Optional[T] = None,
+    tag: Optional[str] = None,
+    tag_value: Optional[str] = None,
+) -> Any
+```
+
+## With Dataclasses
+
+The `@lodum` decorator composes well with `@dataclass`:
+
+```python
+from lodum import lodum
+from dataclasses import dataclass
+
+@lodum
+@dataclass
+class ServerConfig:
+    host: str
+    port: int
+    services: list[str]
+```
+
+<Tip>
+Apply `@lodum` **before** (above) `@dataclass` to ensure proper initialization.
+</Tip>
+
+## Performance Benefits
+
+The decorator generates specialized bytecode during class analysis:
+
+- **~64% faster dumps** compared to generic introspection
+- **~35% faster loads** compared to baseline deserialization
+- **O(1) compilation overhead** - happens once per class
+
+See the [Performance](/advanced/performance) guide for detailed benchmarks.
+
+## Thread Safety
+
+Class registration and analysis are thread-safe. The decorator uses internal locks to ensure:
+
+- Multiple threads can safely decorate classes concurrently
+- The global type registry remains consistent
+- Bytecode compilation happens exactly once per class
+
+## Related
+
+- [Field Customization](/concepts/field-customization) - Customize individual field behavior
+- [Format Support](/concepts/formats) - Use your lodum classes with different formats
+- [Validation System](/concepts/validation) - Add validation rules to fields

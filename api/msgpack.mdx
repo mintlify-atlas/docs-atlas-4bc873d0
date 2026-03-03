@@ -1,0 +1,203 @@
+---
+title: lodum.msgpack
+description: MessagePack serialization API for Lodum
+---
+
+The `lodum.msgpack` module provides MessagePack serialization and deserialization for lodum-enabled classes with support for streaming.
+
+## Installation
+
+Requires `msgpack`. Install with:
+
+```bash
+pip install lodum[msgpack]
+```
+
+## Functions
+
+### dump
+
+```python
+def dump(
+    obj: Any,
+    target: Optional[Union[IO[bytes], Path]] = None,
+    **kwargs
+) -> Optional[bytes]
+```
+
+Encodes a Python object to MessagePack.
+
+<ParamField path="obj" type="Any" required>
+  The object to encode.
+</ParamField>
+
+<ParamField path="target" type="Optional[Union[IO[bytes], Path]]">
+  Optional file-like object or Path to write to.
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional arguments for `msgpack.packb`. Note: `use_bin_type=True` is set by default.
+</ParamField>
+
+**Returns:** The MessagePack bytes if `target` is `None`, otherwise `None`.
+
+**Raises:** `ImportError` if `msgpack` is not installed.
+
+**Example:**
+
+```python
+import lodum
+from lodum import msgpack
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+person = Person(name="Alice", age=30)
+
+# Serialize to bytes
+msgpack_bytes = msgpack.dump(person)
+
+# Serialize to file
+msgpack.dump(person, Path("person.msgpack"))
+```
+
+---
+
+### dumps
+
+```python
+def dumps(obj: Any, **kwargs) -> bytes
+```
+
+Legacy alias for `dump(obj)`.
+
+<ParamField path="obj" type="Any" required>
+  The object to encode.
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional arguments for `msgpack.packb`.
+</ParamField>
+
+**Returns:** The MessagePack bytes.
+
+---
+
+### load
+
+```python
+def load(
+    cls: Type[T],
+    source: Union[bytes, IO[bytes], Path],
+    max_size: int = DEFAULT_MAX_SIZE
+) -> T
+```
+
+Decodes MessagePack from bytes, stream, or file into a Python object.
+
+<ParamField path="cls" type="Type[T]" required>
+  The class to instantiate.
+</ParamField>
+
+<ParamField path="source" type="Union[bytes, IO[bytes], Path]" required>
+  MessagePack bytes, file-like object, or Path.
+</ParamField>
+
+<ParamField path="max_size" type="int" default="DEFAULT_MAX_SIZE">
+  Maximum allowed size for bytes input.
+</ParamField>
+
+**Returns:** An instance of `cls`.
+
+**Raises:**
+- `ImportError` if `msgpack` is not installed.
+- `DeserializationError` if the input is invalid or exceeds `max_size`.
+
+**Example:**
+
+```python
+import lodum
+from lodum import msgpack
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+# Load from bytes
+msgpack_bytes = b'\x82\xa4name\xa5Alice\xa3age\x1e'
+person = msgpack.load(Person, msgpack_bytes)
+
+# Load from file
+person = msgpack.load(Person, Path("person.msgpack"))
+```
+
+---
+
+### loads
+
+```python
+def loads(cls: Type[T], packed_bytes: bytes, **kwargs) -> T
+```
+
+Legacy alias for `load(cls, source)`.
+
+<ParamField path="cls" type="Type[T]" required>
+  The class to instantiate.
+</ParamField>
+
+<ParamField path="packed_bytes" type="bytes" required>
+  MessagePack bytes to parse.
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional arguments (e.g., `max_size`).
+</ParamField>
+
+**Returns:** An instance of `cls`.
+
+---
+
+### stream
+
+```python
+def stream(cls: Type[T], source: Union[IO[bytes], Path]) -> Iterator[T]
+```
+
+Lazily decodes a stream of MessagePack objects. Supports concatenated MessagePack objects (ND-MessagePack style).
+
+<ParamField path="cls" type="Type[T]" required>
+  The class to instantiate for each item.
+</ParamField>
+
+<ParamField path="source" type="Union[IO[bytes], Path]" required>
+  A binary stream, file-like object, or Path.
+</ParamField>
+
+**Returns:** An iterator yielding instances of `cls`.
+
+**Raises:** `ImportError` if `msgpack` is not installed.
+
+**Example:**
+
+```python
+import lodum
+from lodum import msgpack
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+# Stream from file containing concatenated MessagePack objects
+for person in msgpack.stream(Person, Path("people.msgpack")):
+    print(person.name, person.age)
+```
+
+## Notes
+
+- MessagePack is a binary format that is more compact than JSON
+- The `use_bin_type=True` option is set by default to distinguish between strings and binary data
+- Native bytes support without base64 encoding

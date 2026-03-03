@@ -1,0 +1,413 @@
+---
+title: 'Polars Extension'
+description: 'Polars DataFrame and Series serialization support'
+---
+
+## Overview
+
+The Polars extension provides serialization and deserialization support for Polars DataFrames and Series. DataFrames are serialized as dictionaries of columns, while Series are serialized as lists.
+
+## Installation
+
+The Polars extension requires the `polars` package:
+
+```bash
+pip install polars
+```
+
+## Registration
+
+Register the Polars extension before using it:
+
+```python
+from lodum.extensions import polars
+
+polars.register()
+```
+
+This registers handlers for `pl.DataFrame` and `pl.Series` with the global type registry.
+
+## Supported Types
+
+### pl.DataFrame
+
+DataFrames are serialized using `to_dict()`, which creates a dictionary mapping column names to lists of values.
+
+### pl.Series
+
+Series are serialized as lists using `to_list()`.
+
+## API Reference
+
+### register()
+
+```python
+def register() -> None
+```
+
+Registers Polars type handlers with the global registry. This function should be called once at application startup before serializing or deserializing Polars types.
+
+**Example:**
+
+```python
+from lodum.extensions import polars
+import polars as pl
+from lodum import dumps, loads
+
+polars.register()
+
+# Serialize a DataFrame
+df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+data = dumps(df)
+# Result: {"a": [1, 2], "b": [3, 4]}
+
+# Deserialize back to DataFrame
+result = loads(pl.DataFrame, data)
+assert isinstance(result, pl.DataFrame)
+```
+
+## Internal Functions
+
+### _dump_polars_dataframe()
+
+```python
+def _dump_polars_dataframe(
+    obj: Any,
+    dumper: Dumper,
+    depth: int,
+    seen: Optional[set]
+) -> Any
+```
+
+Internal dump handler for Polars DataFrames. Converts DataFrames to dictionaries using `to_dict()`.
+
+<ParamField path="obj" type="Any" required>
+  The DataFrame to serialize
+</ParamField>
+
+<ParamField path="dumper" type="Dumper" required>
+  The dumper instance handling serialization
+</ParamField>
+
+<ParamField path="depth" type="int" required>
+  Current recursion depth for cycle detection
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" required>
+  Set of already-seen objects for cycle detection
+</ParamField>
+
+### _dump_polars_series()
+
+```python
+def _dump_polars_series(
+    obj: Any,
+    dumper: Dumper,
+    depth: int,
+    seen: Optional[set]
+) -> Any
+```
+
+Internal dump handler for Polars Series. Converts Series to lists using `to_list()`.
+
+<ParamField path="obj" type="Any" required>
+  The Series to serialize
+</ParamField>
+
+<ParamField path="dumper" type="Dumper" required>
+  The dumper instance handling serialization
+</ParamField>
+
+<ParamField path="depth" type="int" required>
+  Current recursion depth for cycle detection
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" required>
+  Set of already-seen objects for cycle detection
+</ParamField>
+
+### _load_polars_dataframe()
+
+```python
+def _load_polars_dataframe(
+    cls: Type[Any],
+    loader: Loader,
+    path: Optional[str] = None,
+    depth: int = 0
+) -> Any
+```
+
+Internal load handler for Polars DataFrames. Reconstructs DataFrames from dictionaries.
+
+<ParamField path="cls" type="Type[Any]" required>
+  The target class type (pl.DataFrame)
+</ParamField>
+
+<ParamField path="loader" type="Loader" required>
+  The loader instance handling deserialization
+</ParamField>
+
+<ParamField path="path" type="Optional[str]" default="None">
+  Path context for error reporting
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+### _load_polars_series()
+
+```python
+def _load_polars_series(
+    cls: Type[Any],
+    loader: Loader,
+    path: Optional[str] = None,
+    depth: int = 0
+) -> Any
+```
+
+Internal load handler for Polars Series. Reconstructs Series from lists.
+
+<ParamField path="cls" type="Type[Any]" required>
+  The target class type (pl.Series)
+</ParamField>
+
+<ParamField path="loader" type="Loader" required>
+  The loader instance handling deserialization
+</ParamField>
+
+<ParamField path="path" type="Optional[str]" default="None">
+  Path context for error reporting
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+### _schema_polars_dataframe()
+
+```python
+def _schema_polars_dataframe(
+    t: Type[Any],
+    depth: int,
+    visited: Optional[set]
+) -> Dict[str, Any]
+```
+
+Generates JSON schema representation for Polars DataFrames.
+
+**Returns:** `{"type": "object"}`
+
+### _schema_polars_series()
+
+```python
+def _schema_polars_series(
+    t: Type[Any],
+    depth: int,
+    visited: Optional[set]
+) -> Dict[str, Any]
+```
+
+Generates JSON schema representation for Polars Series.
+
+**Returns:** `{"type": "array"}`
+
+## Usage Examples
+
+### DataFrame Serialization
+
+```python
+from lodum.extensions import polars
+import polars as pl
+from lodum import dumps, loads
+
+polars.register()
+
+# Create a DataFrame
+df = pl.DataFrame({
+    "name": ["Alice", "Bob", "Charlie"],
+    "age": [25, 30, 35],
+    "city": ["NYC", "LA", "Chicago"]
+})
+
+# Serialize
+data = dumps(df)
+print(data)
+# {"name": ["Alice", "Bob", "Charlie"],
+#  "age": [25, 30, 35],
+#  "city": ["NYC", "LA", "Chicago"]}
+
+# Deserialize
+restored = loads(pl.DataFrame, data)
+assert isinstance(restored, pl.DataFrame)
+assert restored.columns == ["name", "age", "city"]
+assert len(restored) == 3
+```
+
+### Series Serialization
+
+```python
+from lodum.extensions import polars
+import polars as pl
+from lodum import dumps, loads
+
+polars.register()
+
+# Create a Series
+series = pl.Series("values", [10, 20, 30, 40])
+
+# Serialize
+data = dumps(series)
+print(data)
+# [10, 20, 30, 40]
+
+# Deserialize
+restored = loads(pl.Series, data)
+assert isinstance(restored, pl.Series)
+assert restored.to_list() == [10, 20, 30, 40]
+```
+
+### DataFrames in Lodum Classes
+
+```python
+from lodum import lodum, dumps, loads
+from lodum.extensions import polars
+import polars as pl
+
+polars.register()
+
+@lodum
+class Analytics:
+    dataset_name: str
+    data: pl.DataFrame
+    summary: pl.Series
+
+analytics = Analytics(
+    dataset_name="sales_q1",
+    data=pl.DataFrame({
+        "product": ["A", "B", "C"],
+        "revenue": [100.0, 200.0, 150.0]
+    }),
+    summary=pl.Series("totals", [100, 200, 150])
+)
+
+serialized = dumps(analytics)
+restored = loads(Analytics, serialized)
+
+assert restored.dataset_name == "sales_q1"
+assert isinstance(restored.data, pl.DataFrame)
+assert isinstance(restored.summary, pl.Series)
+assert restored.data["revenue"].sum() == 450.0
+```
+
+### Working with Different Data Types
+
+```python
+from lodum.extensions import polars
+import polars as pl
+from lodum import dumps, loads
+
+polars.register()
+
+# DataFrame with mixed types
+df = pl.DataFrame({
+    "string_col": ["a", "b", "c"],
+    "int_col": [1, 2, 3],
+    "float_col": [1.1, 2.2, 3.3],
+    "bool_col": [True, False, True]
+})
+
+data = dumps(df)
+restored = loads(pl.DataFrame, data)
+
+# Verify schema is preserved
+assert restored.schema["string_col"] == pl.Utf8
+assert restored.schema["int_col"] == pl.Int64
+assert restored.schema["float_col"] == pl.Float64
+assert restored.schema["bool_col"] == pl.Boolean
+```
+
+### Nested Structures
+
+```python
+from lodum import lodum, dumps, loads
+from lodum.extensions import polars
+import polars as pl
+
+polars.register()
+
+@lodum
+class Experiment:
+    name: str
+    results: list[pl.DataFrame]
+
+experiment = Experiment(
+    name="test_1",
+    results=[
+        pl.DataFrame({"metric": [0.9, 0.85, 0.88]}),
+        pl.DataFrame({"metric": [0.92, 0.89, 0.91]})
+    ]
+)
+
+data = dumps(experiment)
+restored = loads(Experiment, data)
+
+assert len(restored.results) == 2
+assert all(isinstance(df, pl.DataFrame) for df in restored.results)
+```
+
+### Empty DataFrames and Series
+
+```python
+from lodum.extensions import polars
+import polars as pl
+from lodum import dumps, loads
+
+polars.register()
+
+# Empty DataFrame with schema
+empty_df = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Utf8})
+data = dumps(empty_df)
+restored = loads(pl.DataFrame, data)
+assert len(restored) == 0
+assert "a" in restored.columns
+assert "b" in restored.columns
+
+# Empty Series
+empty_series = pl.Series("empty", [], dtype=pl.Float64)
+data = dumps(empty_series)
+restored = loads(pl.Series, data)
+assert len(restored) == 0
+```
+
+### Comparison with Pandas Format
+
+```python
+from lodum.extensions import polars
+import polars as pl
+from lodum import dumps
+
+polars.register()
+
+df = pl.DataFrame({
+    "a": [1, 2, 3],
+    "b": [4, 5, 6]
+})
+
+# Polars uses columnar format (more efficient for wide tables)
+data = dumps(df)
+print(data)
+# {"a": [1, 2, 3], "b": [4, 5, 6]}
+
+# Pandas uses row-oriented format
+# [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]
+```
+
+## Notes
+
+- Polars DataFrames are serialized in columnar format (dictionary of columns), which is more efficient for wide tables
+- Column names and order are preserved during serialization
+- Polars dtypes are generally preserved during round-trip serialization
+- Series names are **not** preserved in the default implementation
+- For preserving Series names, consider wrapping them in a custom class with metadata
+- The columnar format is more space-efficient than row-oriented formats for datasets with many columns

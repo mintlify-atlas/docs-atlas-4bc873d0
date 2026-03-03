@@ -1,0 +1,172 @@
+---
+title: lodum.pickle
+description: Safe pickle serialization API for Lodum
+---
+
+The `lodum.pickle` module provides secure pickle serialization and deserialization for lodum-enabled classes with built-in safety checks.
+
+## Security
+
+The `lodum.pickle` module uses a `SafeUnpickler` that only allows safe, lodum-enabled classes to be loaded. It blocks potentially dangerous modules like `os`, `sys`, and `subprocess` to prevent arbitrary code execution.
+
+## Functions
+
+### dump
+
+```python
+def dump(
+    obj: Any,
+    target: Optional[Union[IO[bytes], Path]] = None,
+    **kwargs
+) -> Optional[bytes]
+```
+
+Encodes a Python object to a pickle byte string, ensuring it is safe.
+
+<ParamField path="obj" type="Any" required>
+  The object to encode. Must be a lodum-enabled class instance.
+</ParamField>
+
+<ParamField path="target" type="Optional[Union[IO[bytes], Path]]">
+  Optional file-like object or Path to write to.
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional arguments for `pickle.dump(s)`.
+</ParamField>
+
+**Returns:** The pickle bytes if `target` is `None`, otherwise `None`.
+
+**Example:**
+
+```python
+import lodum
+from lodum import pickle
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+person = Person(name="Alice", age=30)
+
+# Serialize to bytes
+pickle_bytes = pickle.dump(person)
+
+# Serialize to file
+pickle.dump(person, Path("person.pkl"))
+```
+
+---
+
+### dumps
+
+```python
+def dumps(obj: Any, **kwargs) -> bytes
+```
+
+Legacy alias for `dump(obj)`.
+
+<ParamField path="obj" type="Any" required>
+  The object to encode.
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional arguments for `pickle.dumps`.
+</ParamField>
+
+**Returns:** The pickle bytes.
+
+---
+
+### load
+
+```python
+def load(
+    cls: Type[T],
+    source: Union[bytes, IO[bytes], Path],
+    max_size: int = DEFAULT_MAX_SIZE
+) -> T
+```
+
+Decodes a pickle from bytes, stream, or file into a Python object using safe unpickling.
+
+<ParamField path="cls" type="Type[T]" required>
+  The class to instantiate.
+</ParamField>
+
+<ParamField path="source" type="Union[bytes, IO[bytes], Path]" required>
+  Pickle bytes, file-like object, or Path.
+</ParamField>
+
+<ParamField path="max_size" type="int" default="DEFAULT_MAX_SIZE">
+  Maximum allowed size for bytes input.
+</ParamField>
+
+**Returns:** An instance of `cls`.
+
+**Raises:**
+- `DeserializationError` if the input is invalid, exceeds `max_size`, or contains unsafe classes.
+- `pickle.UnpicklingError` if attempting to unpickle a non-lodum type or unsafe module.
+
+**Example:**
+
+```python
+import lodum
+from lodum import pickle
+
+@lodum
+class Person:
+    name: str
+    age: int
+
+# Load from bytes
+pickle_bytes = b'\x80\x04\x95...'
+person = pickle.load(Person, pickle_bytes)
+
+# Load from file
+person = pickle.load(Person, Path("person.pkl"))
+```
+
+---
+
+### loads
+
+```python
+def loads(cls: Type[T], data: bytes, **kwargs) -> T
+```
+
+Legacy alias for `load(cls, source)`.
+
+<ParamField path="cls" type="Type[T]" required>
+  The class to instantiate.
+</ParamField>
+
+<ParamField path="data" type="bytes" required>
+  Pickle bytes to parse.
+</ParamField>
+
+<ParamField path="**kwargs" type="dict">
+  Additional arguments (e.g., `max_size`).
+</ParamField>
+
+**Returns:** An instance of `cls`.
+
+## SafeUnpickler
+
+The `SafeUnpickler` class restricts unpickling to safe types:
+
+**Allowed built-in types:**
+- `int`, `float`, `str`, `bool`, `bytes`, `bytearray`
+- `list`, `tuple`, `dict`, `set`, `frozenset`
+- `complex`, `NoneType`, `type`
+
+**Allowed standard library types:**
+- `collections.defaultdict`, `collections.OrderedDict`, `collections.Counter`
+- `array.array`, `array._array_reconstructor`
+
+**Custom classes:**
+- Only classes decorated with `@lodum` (having `_lodum_enabled` attribute)
+
+**Blocked modules:**
+- `os`, `sys`, `subprocess` (to prevent code execution)

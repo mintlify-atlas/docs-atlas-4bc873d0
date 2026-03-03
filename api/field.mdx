@@ -1,0 +1,242 @@
+---
+title: "field()"
+description: "Configure field-level serialization and validation behavior"
+---
+
+## Overview
+
+The `field()` function provides metadata to control how individual fields are serialized, deserialized, and validated. It returns a `Field` object that should be used as the default value in your class's `__init__` method.
+
+## Signature
+
+```python
+def field(
+    *,
+    rename: Optional[str] = None,
+    skip_serializing: bool = False,
+    default: Any = _MISSING,
+    default_factory: Optional[Callable[[], Any]] = None,
+    serializer: Optional[Callable[[Any], Any]] = None,
+    deserializer: Optional[Callable[[Any], Any]] = None,
+    validate: Optional[Union[Callable[[Any], None], List[Callable[[Any], None]]]] = None,
+) -> Any
+```
+
+## Parameters
+
+<ParamField path="rename" type="str | None" default="None">
+  The name to use for this field in the serialized output. Useful for matching external API conventions (e.g., camelCase) while keeping Python naming conventions (snake_case).
+</ParamField>
+
+<ParamField path="skip_serializing" type="bool" default="False">
+  If `True`, the field will be excluded from serialized output. The field can still be set during initialization and used in your code, but won't appear in JSON, YAML, etc.
+</ParamField>
+
+<ParamField path="default" type="Any" default="_MISSING">
+  A default value to use if the field is missing during deserialization. Cannot be used together with `default_factory`.
+</ParamField>
+
+<ParamField path="default_factory" type="Callable[[], Any] | None" default="None">
+  A zero-argument callable that returns a default value. Called each time a default is needed (useful for mutable defaults like lists). Cannot be used together with `default`.
+</ParamField>
+
+<ParamField path="serializer" type="Callable[[Any], Any] | None" default="None">
+  A custom function to transform the field's value during serialization. Receives the field value and should return the serialized representation.
+</ParamField>
+
+<ParamField path="deserializer" type="Callable[[Any], Any] | None" default="None">
+  A custom function to transform the field's value during deserialization. Receives the raw value and should return the typed instance.
+</ParamField>
+
+<ParamField path="validate" type="Callable[[Any], None] | List[Callable[[Any], None]] | None" default="None">
+  A validation function or list of validation functions. Each function receives the field value during deserialization and should raise an exception if validation fails.
+</ParamField>
+
+## Returns
+
+A `Field` object containing the specified metadata. This should be used as the default value in your `__init__` parameter.
+
+## Basic Usage
+
+### Renaming Fields
+
+```python
+from lodum import lodum, field
+
+@lodum
+class User:
+    def __init__(
+        self,
+        user_id: int = field(rename="userId"),
+        first_name: str = field(rename="firstName"),
+    ):
+        self.user_id = user_id
+        self.first_name = first_name
+
+# Serializes to: {"userId": 123, "firstName": "John"}
+```
+
+### Default Values
+
+```python
+from lodum import lodum, field
+from typing import List
+
+@lodum
+class Config:
+    def __init__(
+        self,
+        timeout: int = field(default=30),
+        tags: List[str] = field(default_factory=list),
+        enabled: bool = field(default=True),
+    ):
+        self.timeout = timeout
+        self.tags = tags
+        self.enabled = enabled
+```
+
+### Skipping Fields
+
+```python
+from lodum import lodum, field
+
+@lodum
+class Account:
+    def __init__(
+        self,
+        username: str,
+        password: str = field(skip_serializing=True),
+    ):
+        self.username = username
+        self.password = password
+
+# Only "username" appears in serialized output
+```
+
+## Advanced Usage
+
+### Custom Serializers and Deserializers
+
+```python
+from lodum import lodum, field
+from datetime import datetime
+
+def serialize_timestamp(dt: datetime) -> int:
+    return int(dt.timestamp())
+
+def deserialize_timestamp(ts: int) -> datetime:
+    return datetime.fromtimestamp(ts)
+
+@lodum
+class Event:
+    def __init__(
+        self,
+        name: str,
+        created_at: datetime = field(
+            serializer=serialize_timestamp,
+            deserializer=deserialize_timestamp,
+        ),
+    ):
+        self.name = name
+        self.created_at = created_at
+```
+
+### Validation
+
+```python
+from lodum import lodum, field
+
+def validate_positive(value: int) -> None:
+    if value <= 0:
+        raise ValueError("Must be positive")
+
+def validate_range(value: int) -> None:
+    if not (1 <= value <= 100):
+        raise ValueError("Must be between 1 and 100")
+
+@lodum
+class Score:
+    def __init__(
+        self,
+        points: int = field(validate=[validate_positive, validate_range]),
+    ):
+        self.points = points
+```
+
+### Combining Options
+
+```python
+from lodum import lodum, field
+from typing import Optional
+
+@lodum
+class Product:
+    def __init__(
+        self,
+        product_id: str = field(rename="id"),
+        price: float = field(
+            rename="priceUSD",
+            validate=lambda x: x >= 0 if x else None,
+        ),
+        internal_code: Optional[str] = field(
+            default=None,
+            skip_serializing=True,
+        ),
+    ):
+        self.product_id = product_id
+        self.price = price
+        self.internal_code = internal_code
+```
+
+## Validation Details
+
+Validation functions are called during deserialization in the order they appear in the list. If any validation function raises an exception, deserialization fails immediately.
+
+```python
+def validate_email(email: str) -> None:
+    if "@" not in email:
+        raise ValueError(f"Invalid email: {email}")
+
+@lodum
+class Contact:
+    def __init__(
+        self,
+        email: str = field(validate=validate_email),
+    ):
+        self.email = email
+```
+
+## Default Factory Patterns
+
+Use `default_factory` for mutable defaults to avoid sharing instances:
+
+```python
+from lodum import lodum, field
+from typing import List, Dict
+
+@lodum
+class Container:
+    def __init__(
+        self,
+        items: List[str] = field(default_factory=list),  # Correct
+        metadata: Dict[str, str] = field(default_factory=dict),  # Correct
+    ):
+        self.items = items
+        self.metadata = metadata
+
+# Each instance gets its own list and dict
+```
+
+## Notes
+
+- `default` and `default_factory` are mutually exclusive - you can only specify one
+- All parameters are keyword-only (must use `field(rename="...")`, not `field("...")`)
+- Validation only runs during deserialization, not when setting attributes directly
+- Custom serializers/deserializers override the default type handling
+- The `Field` object itself should not be instantiated directly - always use the `field()` function
+
+## See Also
+
+- [@lodum](/api/lodum-decorator) - Class decorator
+- [asdict()](/api/asdict-fromdict) - Serialize to dictionaries
+- [fromdict()](/api/asdict-fromdict) - Deserialize from dictionaries

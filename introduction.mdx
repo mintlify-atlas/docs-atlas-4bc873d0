@@ -1,0 +1,135 @@
+---
+title: Introduction
+description: A high-performance Python serialization framework inspired by Rust's serde
+---
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/webmaven/lodum/main/docs/assets/dumptruck-header-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/webmaven/lodum/main/docs/assets/dumptruck-header.png" />
+  <img alt="lodum: A high-performance Python serialization framework" src="https://raw.githubusercontent.com/webmaven/lodum/main/docs/assets/dumptruck-header.png" />
+</picture>
+
+`lodum` is a high-performance framework for **lo**ading and **dum**ping Python data structures efficiently and ergonomically.
+
+<Note>
+  **Think of it as `serde` for Python.**
+</Note>
+
+## Why lodum?
+
+<CardGroup cols={2}>
+  <Card title="Fast" icon="rocket">
+    **~64% faster** dumps than standard introspection using AST bytecode generation
+  </Card>
+  <Card title="Safe" icon="shield">
+    Secure-by-default design. Blocks arbitrary code execution in `pickle`
+  </Card>
+  <Card title="Universal" icon="box">
+    One API for **JSON, YAML, TOML, MsgPack, CBOR, BSON, and Pickle**
+  </Card>
+  <Card title="Extensible" icon="puzzle-piece">
+    Native support for `numpy`, `pandas`, and `polars` without extra glue code
+  </Card>
+  <Card title="Validated" icon="check">
+    Built-in validators (`Range`, `Length`) and schema generation
+  </Card>
+  <Card title="WASM ready" icon="cube">
+    Full Pyodide/WASM compatibility for browser and edge deployments
+  </Card>
+</CardGroup>
+
+## Core concepts
+
+The architecture of `lodum` is built on a clear separation of concerns, just like `serde`:
+
+1. **Lodum-enabled data structures** - You define the data you want to encode by decorating your classes with `@lodum`. This decorator introspects your class to understand its structure.
+
+2. **Data formats (loaders/dumpers)** - The logic for converting data into a specific format (like JSON) is handled by `Loader` and `Dumper` implementations. This makes the core library format-agnostic.
+
+This means you can define how your data is structured once, and then easily encode it to multiple formats (JSON, YAML, etc.) by simply using a different module.
+
+## Quick example
+
+Here's a taste of what `lodum` can do:
+
+```python
+from lodum import lodum, json
+from dataclasses import dataclass
+
+@lodum
+@dataclass
+class User:
+    name: str
+    age: int
+    is_active: bool
+
+user = User(name="Alex", age=30, is_active=True)
+
+# Encode to JSON
+json_string = json.dumps(user)
+print(json_string)
+# {"name": "Alex", "age": 30, "is_active": true}
+
+# Decode from JSON
+json_data = '{"name": "Barbara", "age": 25, "is_active": false}'
+barbara = json.loads(User, json_data)
+print(f"Name: {barbara.name}, Age: {barbara.age}")
+# Name: Barbara, Age: 25
+```
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install lodum with pip or your favorite package manager
+  </Card>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Get up and running with lodum in minutes
+  </Card>
+</CardGroup>
+
+## Performance
+
+`lodum` is designed for high performance. When you first use a `@lodum`-enabled class, the library analyzes its structure and generates specialized Python bytecode for serialization and deserialization using an internal Abstract Syntax Tree (AST) compiler.
+
+This approach eliminates the overhead of generic introspection and `getattr` calls during runtime, resulting in:
+
+- **~64% faster dumping** (serialization) than the baseline
+- **~35% faster loading** (deserialization) than the baseline
+
+## Supported formats
+
+`lodum` is designed to be format-agnostic, and new formats can be added by implementing the `Dumper` and `Loader` protocols:
+
+- **JSON** - `lodum.json`
+- **YAML** - `lodum.yaml`
+- **TOML** - `lodum.toml`
+- **MessagePack** - `lodum.msgpack`
+- **CBOR** - `lodum.cbor`
+- **BSON** - `lodum.bson`
+- **Pickle** - `lodum.pickle` (with SafeUnpickler)
+
+## Supported types
+
+`lodum` supports a comprehensive set of Python types:
+
+- **Primitives** - `int`, `str`, `float`, `bool`, `None`
+- **Collections** - `list`, `dict`, `tuple`, `set`, `bytes`, `bytearray`, `array.array`
+- **Standard library** - `datetime`, `enum.Enum`, `uuid.UUID`, `decimal.Decimal`, `pathlib.Path`
+- **Typing** - `Optional`, `Union`, `Any`, `TypeVar`
+- **Third-party libraries** - `numpy.ndarray`, `pandas.DataFrame`, `polars.DataFrame`
+- **Custom objects** - Any class decorated with `@lodum`
+
+## Next steps
+
+<CardGroup cols={3}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install lodum and get started
+  </Card>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Learn the basics in 5 minutes
+  </Card>
+  <Card title="API reference" icon="book" href="https://webmaven.github.io/lodum/api_reference">
+    Explore the complete API
+  </Card>
+</CardGroup>

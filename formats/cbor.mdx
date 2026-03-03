@@ -1,0 +1,275 @@
+---
+title: CBOR Format
+description: CBOR serialization and deserialization with Lodum
+---
+
+# CBOR Format
+
+Lodum provides CBOR (Concise Binary Object Representation) support for efficient, standards-based binary serialization. CBOR is defined in RFC 8949 and is designed for small code size and message size.
+
+## Installation
+
+CBOR support requires the `cbor2` library:
+
+```bash
+pip install lodum[cbor]
+```
+
+## API Reference
+
+### dump()
+
+```python
+from lodum import cbor
+
+cbor.dump(obj: Any, target: Optional[Union[IO[bytes], Path]] = None, **kwargs) -> Optional[bytes]
+```
+
+Encodes a Python object to CBOR.
+
+**Parameters:**
+- `obj`: The object to encode (must be a `@lodum`-decorated class)
+- `target`: Optional file-like object or Path to write to
+- `**kwargs`: Additional arguments for `cbor2.dump(s)`
+
+**Returns:**
+- The CBOR bytes if `target` is None, otherwise None
+
+**Example:**
+
+```python
+from lodum import lodum, cbor
+from pathlib import Path
+
+@lodum
+class Sensor:
+    id: int
+    temperature: float
+    active: bool
+    data: bytes
+
+sensor = Sensor(id=42, temperature=23.5, active=True, data=b"\x01\x02\x03")
+
+# Serialize to bytes
+cbor_bytes = cbor.dump(sensor)
+print(f"CBOR size: {len(cbor_bytes)} bytes")
+
+# Serialize to file
+cbor.dump(sensor, Path("sensor.cbor"))
+```
+
+### dumps()
+
+```python
+cbor.dumps(obj: Any, **kwargs) -> bytes
+```
+
+Legacy alias for `dump(obj)`. Provided for compatibility.
+
+### load()
+
+```python
+cbor.load(
+    cls: Type[T],
+    source: Union[bytes, IO[bytes], Path],
+    max_size: int = DEFAULT_MAX_SIZE
+) -> T
+```
+
+Decodes CBOR from bytes, stream, or file into a Python object.
+
+**Parameters:**
+- `cls`: The class to instantiate
+- `source`: CBOR bytes, file-like object, or Path
+- `max_size`: Maximum allowed size for bytes input (default: 10MB)
+
+**Returns:**
+- An instance of `cls`
+
+**Example:**
+
+```python
+from lodum import lodum, cbor
+from pathlib import Path
+
+@lodum
+class Sensor:
+    id: int
+    temperature: float
+    active: bool
+    data: bytes
+
+# Load from bytes
+cbor_bytes = b'\xa4\xa2id\x18*\xabtemperature\xfb@7\x80\x00\x00\x00\x00\x00\xa6active\xf5\xa4data\x43\x01\x02\x03'
+sensor = cbor.load(Sensor, cbor_bytes)
+print(f"Sensor {sensor.id}: {sensor.temperature}°C")
+
+# Load from file
+sensor = cbor.load(Sensor, Path("sensor.cbor"))
+```
+
+### loads()
+
+```python
+cbor.loads(cls: Type[T], cbor_bytes: bytes, **kwargs) -> T
+```
+
+Legacy alias for `load(cls, source)`. Provided for compatibility.
+
+### stream()
+
+```python
+cbor.stream(cls: Type[T], source: Union[IO[bytes], Path]) -> Iterator[T]
+```
+
+Lazily decodes a stream of CBOR objects. Supports concatenated CBOR objects.
+
+**Parameters:**
+- `cls`: The class to instantiate for each item
+- `source`: A binary stream, file-like object, or Path
+
+**Returns:**
+- An iterator yielding instances of `cls`
+
+**Example:**
+
+```python
+from lodum import lodum, cbor
+from pathlib import Path
+
+@lodum
+class Measurement:
+    timestamp: int
+    value: float
+
+# sensors.cbor contains concatenated CBOR objects
+for measurement in cbor.stream(Measurement, Path("sensors.cbor")):
+    print(f"Time {measurement.timestamp}: {measurement.value}")
+```
+
+## Binary Data Handling
+
+CBOR natively supports binary data with dedicated byte string types:
+
+```python
+from lodum import lodum, cbor
+
+@lodum
+class Image:
+    name: str
+    width: int
+    height: int
+    pixels: bytes
+
+img = Image(
+    name="test.png",
+    width=100,
+    height=100,
+    pixels=b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+)
+
+# Binary data is stored efficiently with type markers
+encoded = cbor.dump(img)
+
+# Restore binary data exactly
+restored = cbor.load(Image, encoded)
+assert restored.pixels == img.pixels
+```
+
+## CBOR vs MessagePack
+
+Both CBOR and MessagePack are binary formats, but they have different design goals:
+
+| Feature | CBOR | MessagePack |
+|---------|------|-------------|
+| Standard | RFC 8949 | De facto standard |
+| Design goal | Small code size | Small message size |
+| Extensibility | Excellent (tags) | Limited |
+| Floating point | Full IEEE 754 | Full IEEE 754 |
+| Timestamps | Native support | Extension |
+| Ecosystem | Growing | Mature |
+
+**Choose CBOR when:**
+- You need standards compliance
+- You want extensibility via CBOR tags
+- You're working in constrained environments
+- You need semantic tagging
+
+**Choose MessagePack when:**
+- You need maximum speed
+- You want the smallest message size
+- You need mature library support
+
+## Type Preservation
+
+CBOR provides excellent type preservation:
+
+```python
+from lodum import lodum, cbor
+
+@lodum
+class Numbers:
+    small_int: int
+    large_int: int
+    precise_float: float
+    simple_bool: bool
+
+data = Numbers(
+    small_int=42,
+    large_int=2**63 - 1,
+    precise_float=3.141592653589793,
+    simple_bool=True
+)
+
+encoded = cbor.dump(data)
+restored = cbor.load(Numbers, encoded)
+
+assert restored.small_int == data.small_int
+assert restored.large_int == data.large_int
+assert restored.precise_float == data.precise_float
+assert restored.simple_bool == data.simple_bool
+```
+
+## Streaming for Large Datasets
+
+CBOR's streaming support enables memory-efficient processing:
+
+```python
+from lodum import lodum, cbor
+from pathlib import Path
+
+@lodum
+class LogEntry:
+    level: str
+    message: str
+    timestamp: int
+
+# Write large log file
+with open("logs.cbor", "wb") as f:
+    for i in range(100_000):
+        entry = LogEntry(level="INFO", message=f"Event {i}", timestamp=i)
+        f.write(cbor.dump(entry))
+
+# Process without loading all into memory
+error_count = 0
+for entry in cbor.stream(LogEntry, Path("logs.cbor")):
+    if entry.level == "ERROR":
+        error_count += 1
+
+print(f"Found {error_count} errors")
+```
+
+## Use Cases
+
+CBOR is ideal for:
+- IoT and embedded systems
+- Constrained network protocols
+- Standards-compliant systems
+- Interoperability with other languages
+- Cryptographic applications (COSE)
+- Semantic data representation
+
+CBOR is less suitable for:
+- Human-readable data
+- Legacy systems requiring text formats
+- Maximum performance scenarios (use MessagePack)

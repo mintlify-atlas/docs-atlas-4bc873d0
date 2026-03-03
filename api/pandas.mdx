@@ -1,0 +1,361 @@
+---
+title: 'Pandas Extension'
+description: 'Pandas DataFrame and Series serialization support'
+---
+
+## Overview
+
+The Pandas extension provides serialization and deserialization support for Pandas DataFrames and Series. DataFrames are serialized as lists of records (dictionaries), while Series are serialized as dictionaries.
+
+## Installation
+
+The Pandas extension requires the `pandas` package:
+
+```bash
+pip install pandas
+```
+
+## Registration
+
+Register the Pandas extension before using it:
+
+```python
+from lodum.extensions import pandas
+
+pandas.register()
+```
+
+This registers handlers for `pd.DataFrame` and `pd.Series` with the global type registry.
+
+## Supported Types
+
+### pd.DataFrame
+
+DataFrames are serialized using the `orient="records"` format, converting each row to a dictionary.
+
+### pd.Series
+
+Series are serialized as dictionaries with index as keys and values as dictionary values.
+
+## API Reference
+
+### register()
+
+```python
+def register() -> None
+```
+
+Registers Pandas type handlers with the global registry. This function should be called once at application startup before serializing or deserializing Pandas types.
+
+**Example:**
+
+```python
+from lodum.extensions import pandas
+import pandas as pd
+from lodum import dumps, loads
+
+pandas.register()
+
+# Serialize a DataFrame
+df = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
+data = dumps(df)
+# Result: [{"a": 1, "b": 3}, {"a": 2, "b": 4}]
+
+# Deserialize back to DataFrame
+result = loads(pd.DataFrame, data)
+assert isinstance(result, pd.DataFrame)
+```
+
+## Internal Functions
+
+### _dump_pandas_dataframe()
+
+```python
+def _dump_pandas_dataframe(
+    obj: Any,
+    dumper: Dumper,
+    depth: int,
+    seen: Optional[set]
+) -> Any
+```
+
+Internal dump handler for Pandas DataFrames. Converts DataFrames to lists of dictionaries using `to_dict(orient="records")`.
+
+<ParamField path="obj" type="Any" required>
+  The DataFrame to serialize
+</ParamField>
+
+<ParamField path="dumper" type="Dumper" required>
+  The dumper instance handling serialization
+</ParamField>
+
+<ParamField path="depth" type="int" required>
+  Current recursion depth for cycle detection
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" required>
+  Set of already-seen objects for cycle detection
+</ParamField>
+
+### _dump_pandas_series()
+
+```python
+def _dump_pandas_series(
+    obj: Any,
+    dumper: Dumper,
+    depth: int,
+    seen: Optional[set]
+) -> Any
+```
+
+Internal dump handler for Pandas Series. Converts Series to dictionaries using `to_dict()`.
+
+<ParamField path="obj" type="Any" required>
+  The Series to serialize
+</ParamField>
+
+<ParamField path="dumper" type="Dumper" required>
+  The dumper instance handling serialization
+</ParamField>
+
+<ParamField path="depth" type="int" required>
+  Current recursion depth for cycle detection
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" required>
+  Set of already-seen objects for cycle detection
+</ParamField>
+
+### _load_pandas_dataframe()
+
+```python
+def _load_pandas_dataframe(
+    cls: Type[Any],
+    loader: Loader,
+    path: Optional[str] = None,
+    depth: int = 0
+) -> Any
+```
+
+Internal load handler for Pandas DataFrames. Reconstructs DataFrames from lists of dictionaries.
+
+<ParamField path="cls" type="Type[Any]" required>
+  The target class type (pd.DataFrame)
+</ParamField>
+
+<ParamField path="loader" type="Loader" required>
+  The loader instance handling deserialization
+</ParamField>
+
+<ParamField path="path" type="Optional[str]" default="None">
+  Path context for error reporting
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+### _load_pandas_series()
+
+```python
+def _load_pandas_series(
+    cls: Type[Any],
+    loader: Loader,
+    path: Optional[str] = None,
+    depth: int = 0
+) -> Any
+```
+
+Internal load handler for Pandas Series. Reconstructs Series from dictionaries.
+
+<ParamField path="cls" type="Type[Any]" required>
+  The target class type (pd.Series)
+</ParamField>
+
+<ParamField path="loader" type="Loader" required>
+  The loader instance handling deserialization
+</ParamField>
+
+<ParamField path="path" type="Optional[str]" default="None">
+  Path context for error reporting
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+### _schema_pandas_dataframe()
+
+```python
+def _schema_pandas_dataframe(
+    t: Type[Any],
+    depth: int,
+    visited: Optional[set]
+) -> Dict[str, Any]
+```
+
+Generates JSON schema representation for Pandas DataFrames.
+
+**Returns:** `{"type": "array", "items": {"type": "object"}}`
+
+### _schema_pandas_series()
+
+```python
+def _schema_pandas_series(
+    t: Type[Any],
+    depth: int,
+    visited: Optional[set]
+) -> Dict[str, Any]
+```
+
+Generates JSON schema representation for Pandas Series.
+
+**Returns:** `{"type": "object"}`
+
+## Usage Examples
+
+### DataFrame Serialization
+
+```python
+from lodum.extensions import pandas
+import pandas as pd
+from lodum import dumps, loads
+
+pandas.register()
+
+# Create a DataFrame
+df = pd.DataFrame({
+    "name": ["Alice", "Bob", "Charlie"],
+    "age": [25, 30, 35],
+    "city": ["NYC", "LA", "Chicago"]
+})
+
+# Serialize
+data = dumps(df)
+print(data)
+# [{"name": "Alice", "age": 25, "city": "NYC"},
+#  {"name": "Bob", "age": 30, "city": "LA"},
+#  {"name": "Charlie", "age": 35, "city": "Chicago"}]
+
+# Deserialize
+restored = loads(pd.DataFrame, data)
+assert isinstance(restored, pd.DataFrame)
+assert list(restored.columns) == ["name", "age", "city"]
+assert len(restored) == 3
+```
+
+### Series Serialization
+
+```python
+from lodum.extensions import pandas
+import pandas as pd
+from lodum import dumps, loads
+
+pandas.register()
+
+# Create a Series
+series = pd.Series([10, 20, 30], index=["a", "b", "c"])
+
+# Serialize
+data = dumps(series)
+print(data)
+# {"a": 10, "b": 20, "c": 30}
+
+# Deserialize
+restored = loads(pd.Series, data)
+assert isinstance(restored, pd.Series)
+assert restored["a"] == 10
+assert restored["b"] == 20
+assert restored["c"] == 30
+```
+
+### DataFrames in Lodum Classes
+
+```python
+from lodum import lodum, dumps, loads
+from lodum.extensions import pandas
+import pandas as pd
+
+pandas.register()
+
+@lodum
+class Dataset:
+    name: str
+    data: pd.DataFrame
+    metadata: pd.Series
+
+dataset = Dataset(
+    name="sales_data",
+    data=pd.DataFrame({
+        "product": ["A", "B", "C"],
+        "revenue": [100, 200, 150]
+    }),
+    metadata=pd.Series({"version": 1, "rows": 3})
+)
+
+serialized = dumps(dataset)
+restored = loads(Dataset, serialized)
+
+assert restored.name == "sales_data"
+assert isinstance(restored.data, pd.DataFrame)
+assert isinstance(restored.metadata, pd.Series)
+assert restored.data["revenue"].sum() == 450
+```
+
+### Working with Different Data Types
+
+```python
+from lodum.extensions import pandas
+import pandas as pd
+from lodum import dumps, loads
+
+pandas.register()
+
+# DataFrame with mixed types
+df = pd.DataFrame({
+    "string_col": ["a", "b", "c"],
+    "int_col": [1, 2, 3],
+    "float_col": [1.1, 2.2, 3.3],
+    "bool_col": [True, False, True]
+})
+
+data = dumps(df)
+restored = loads(pd.DataFrame, data)
+
+# Verify types are preserved
+assert restored["string_col"].dtype == object
+assert restored["int_col"].dtype == int
+assert restored["float_col"].dtype == float
+assert restored["bool_col"].dtype == bool
+```
+
+### Empty DataFrames and Series
+
+```python
+from lodum.extensions import pandas
+import pandas as pd
+from lodum import dumps, loads
+
+pandas.register()
+
+# Empty DataFrame
+empty_df = pd.DataFrame()
+data = dumps(empty_df)
+restored = loads(pd.DataFrame, data)
+assert len(restored) == 0
+
+# Empty Series
+empty_series = pd.Series(dtype=float)
+data = dumps(empty_series)
+restored = loads(pd.Series, data)
+assert len(restored) == 0
+```
+
+## Notes
+
+- DataFrame column order is preserved during serialization
+- Index information for DataFrames is **not** preserved in the default implementation (uses `orient="records"`)
+- Series index is preserved as dictionary keys
+- For preserving DataFrame index, consider adding it as a regular column before serialization
+- Pandas dtypes are inferred during deserialization and may not exactly match the original
+- For complex dtype requirements, consider storing dtype information separately

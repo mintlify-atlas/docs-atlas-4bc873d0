@@ -1,0 +1,380 @@
+---
+title: Format Support
+description: Overview of serialization formats supported by lodum and how to use them
+---
+
+Lodum provides a unified API for serializing to and deserializing from multiple data formats. Define your data structure once with `@lodum`, then encode it to any supported format.
+
+## Architecture
+
+Lodum's architecture separates concerns like Rust's `serde`:
+
+1. **Data Structures**: Classes decorated with `@lodum` define what data to encode
+2. **Format Handlers**: `Dumper` and `Loader` implementations handle how to encode
+
+This separation makes the library format-agnostic - you can switch formats by changing the import.
+
+```python
+from lodum import lodum, json, yaml, msgpack
+
+@lodum
+class User:
+    def __init__(self, name: str, age: int):
+        self.name = name
+        self.age = age
+
+user = User(name="Alex", age=30)
+
+# Same object, different formats
+json_str = json.dumps(user)
+yaml_str = yaml.dumps(user)
+msgpack_bytes = msgpack.dumps(user)
+```
+
+## Supported Formats
+
+### JSON
+
+**Module**: `lodum.json`
+
+```python
+from lodum import lodum, json
+
+@lodum
+class Config:
+    def __init__(self, host: str, port: int):
+        self.host = host
+        self.port = port
+
+config = Config(host="localhost", port=8080)
+
+# Serialize
+json_str = json.dumps(config)
+# {"host": "localhost", "port": 8080}
+
+# Deserialize
+config = json.loads(Config, '{"host": "0.0.0.0", "port": 3000}')
+```
+
+**API**:
+- `json.dump(obj, target=None, **kwargs)` - Encode to string or file
+- `json.dumps(obj, **kwargs)` - Encode to string (legacy alias)
+- `json.load(cls, source, max_size=10MB)` - Decode from string/file
+- `json.loads(cls, json_string)` - Decode from string (legacy alias)
+- `json.stream(cls, source)` - Lazy iteration over JSON arrays
+- `json.schema(cls)` - Generate JSON Schema
+
+**Binary Data**: Encoded as Base64 strings
+
+### YAML
+
+**Module**: `lodum.yaml`
+
+```python
+from lodum import lodum, yaml
+
+@lodum
+class User:
+    def __init__(self, name: str, roles: list[str]):
+        self.name = name
+        self.roles = roles
+
+user = User(name="Alice", roles=["admin", "editor"])
+
+yaml_str = yaml.dumps(user)
+# name: Alice
+# roles:
+# - admin
+# - editor
+
+user = yaml.loads(User, yaml_str)
+```
+
+**API**:
+- `yaml.dumps(obj)` - Encode to YAML string
+- `yaml.loads(cls, yaml_string)` - Decode from YAML string
+
+**Binary Data**: Native binary representation
+
+### TOML
+
+**Module**: `lodum.toml`
+
+```python
+from lodum import lodum, toml
+
+@lodum
+class Database:
+    def __init__(self, host: str, port: int, timeout: float):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+
+db = Database(host="127.0.0.1", port=5432, timeout=30.0)
+
+toml_str = toml.dumps(db)
+# host = "127.0.0.1"
+# port = 5432
+# timeout = 30.0
+```
+
+**API**:
+- `toml.dumps(obj)` - Encode to TOML string
+- `toml.loads(cls, toml_string)` - Decode from TOML string
+
+**Binary Data**: Encoded as Base64 strings
+
+### MessagePack
+
+**Module**: `lodum.msgpack`
+
+```python
+from lodum import lodum, msgpack
+
+@lodum
+class Packet:
+    def __init__(self, data: bytes, timestamp: int):
+        self.data = data
+        self.timestamp = timestamp
+
+packet = Packet(data=b"\x00\x01\x02", timestamp=1234567890)
+
+# Returns bytes
+msgpack_bytes = msgpack.dumps(packet)
+
+packet = msgpack.loads(Packet, msgpack_bytes)
+```
+
+**API**:
+- `msgpack.dumps(obj)` - Encode to MessagePack bytes
+- `msgpack.loads(cls, msgpack_bytes)` - Decode from MessagePack bytes
+
+**Binary Data**: Native binary representation (efficient)
+
+### CBOR
+
+**Module**: `lodum.cbor`
+
+```python
+from lodum import lodum, cbor
+
+@lodum
+class Sensor:
+    def __init__(self, reading: float, data: bytes):
+        self.reading = reading
+        self.data = data
+
+sensor = Sensor(reading=23.5, data=b"raw")
+
+cbor_bytes = cbor.dumps(sensor)
+sensor = cbor.loads(Sensor, cbor_bytes)
+```
+
+**API**:
+- `cbor.dumps(obj)` - Encode to CBOR bytes
+- `cbor.loads(cls, cbor_bytes)` - Decode from CBOR bytes
+
+**Binary Data**: Native binary representation
+
+### BSON
+
+**Module**: `lodum.bson`
+
+```python
+from lodum import lodum, bson
+
+@lodum
+class Document:
+    def __init__(self, title: str, content: str):
+        self.title = title
+        self.content = content
+
+doc = Document(title="Hello", content="World")
+
+bson_bytes = bson.dumps(doc)
+doc = bson.loads(Document, bson_bytes)
+```
+
+**API**:
+- `bson.dumps(obj)` - Encode to BSON bytes
+- `bson.loads(cls, bson_bytes)` - Decode from BSON bytes
+
+**Binary Data**: Native binary representation
+
+### Pickle (Secure)
+
+**Module**: `lodum.pickle`
+
+<Warning>
+Pickle is inherently insecure. Only deserialize data from **trusted sources**. Lodum provides a `SafeUnpickler` that restricts deserialization to safe types.
+</Warning>
+
+```python
+from lodum import lodum, pickle
+
+@lodum
+class State:
+    def __init__(self, data: dict):
+        self.data = data
+
+state = State(data={"key": "value"})
+
+pickle_bytes = pickle.dumps(state)
+state = pickle.loads(State, pickle_bytes)
+```
+
+**Security Features**:
+- Only allows `lodum`-decorated classes
+- Restricts to safe built-in types (`int`, `str`, `list`, etc.)
+- Blocks dangerous modules (`os`, `sys`, `subprocess`)
+
+**API**:
+- `pickle.dumps(obj)` - Encode with validation
+- `pickle.loads(cls, pickle_bytes)` - Decode with SafeUnpickler
+
+## Dumper Protocol
+
+All format handlers implement the `Dumper` protocol from `src/lodum/core.py:133-191`:
+
+```python
+class Dumper(Protocol):
+    """Defines the interface for a data format dumper (encoder)."""
+
+    def dump_int(self, value: int, depth: int = 0, seen: Optional[set] = None) -> Any: ...
+    def dump_str(self, value: str, depth: int = 0, seen: Optional[set] = None) -> Any: ...
+    def dump_float(self, value: float, depth: int = 0, seen: Optional[set] = None) -> Any: ...
+    def dump_bool(self, value: bool, depth: int = 0, seen: Optional[set] = None) -> Any: ...
+    def dump_bytes(self, value: bytes, depth: int = 0, seen: Optional[set] = None) -> Any: ...
+    def dump_none(self, depth: int = 0, seen: Optional[set] = None) -> Any: ...
+    def dump_list(self, value: List[Any], depth: int = 0, seen: Optional[set] = None) -> Any: ...
+    def dump_dict(self, value: Dict[str, Any], depth: int = 0, seen: Optional[set] = None) -> Any: ...
+    
+    def begin_struct(self, cls: Type) -> Any: ...
+    def end_struct(self) -> Any: ...
+    def field(self, name: str, value: Any, handler: Callable, depth: int = 0, seen: Optional[set] = None) -> None: ...
+    
+    def begin_list(self) -> None: ...
+    def end_list(self) -> Any: ...
+    def list_item(self, value: Any, handler: Callable, depth: int = 0, seen: Optional[set] = None) -> None: ...
+```
+
+## Loader Protocol
+
+All format handlers implement the `Loader` protocol from `src/lodum/core.py:321-338`:
+
+```python
+class Loader(Protocol):
+    """Defines the interface for a data format loader (decoder)."""
+
+    def load_int(self) -> int: ...
+    def load_str(self) -> str: ...
+    def load_float(self) -> float: ...
+    def load_bool(self) -> bool: ...
+    def load_bytes(self) -> bytes: ...
+    def load_list(self) -> Iterator["Loader"]: ...
+    def load_dict(self) -> Iterator[tuple[str, "Loader"]]: ...
+    def load_any(self) -> Any: ...
+    
+    def mark(self) -> Any: ...
+    def rewind(self, marker: Any) -> None: ...
+    def get_dict(self) -> Optional[Union[Dict[str, Any], List[Any]]]: ...
+    def load_bytes_value(self, value: Any) -> bytes: ...
+```
+
+## Streaming Serialization
+
+For large datasets, use streaming to achieve O(1) memory usage:
+
+```python
+import sys
+from lodum import lodum, json
+
+@lodum
+class LargeData:
+    def __init__(self, items: list[int]):
+        self.items = items
+
+data = LargeData(items=list(range(1_000_000)))
+
+# Write directly to stdout without building full string in memory
+json.dump(data, sys.stdout)
+
+# Or to a file
+with open("data.json", "w") as f:
+    json.dump(data, f)
+```
+
+**Streaming Loaders**:
+
+```python
+from lodum import lodum, json
+
+@lodum
+class Item:
+    def __init__(self, id: int, name: str):
+        self.id = id
+        self.name = name
+
+# Lazy iteration over JSON array - requires 'ijson' package
+with open("items.json", "rb") as f:
+    for item in json.stream(Item, f):
+        print(item.name)
+```
+
+<Note>
+Streaming deserialization requires the `ijson` package: `pip install lodum[ijson]`
+</Note>
+
+## Round-Trip Conversions
+
+Data remains consistent across format conversions:
+
+```python
+import json as std_json
+from lodum import lodum, json, yaml
+
+@lodum
+class ServerConfig:
+    def __init__(self, host: str, port: int, services: list[str]):
+        self.host = host
+        self.port = port
+        self.services = services
+
+# Start with JSON
+original_json = '{"host": "127.0.0.1", "port": 8080, "services": ["users", "products"]}'
+
+# Decode from JSON
+config = json.loads(ServerConfig, original_json)
+
+# Encode to YAML
+yaml_output = yaml.dumps(config)
+
+# Decode from YAML
+config = yaml.loads(ServerConfig, yaml_output)
+
+# Encode back to JSON
+final_json = json.dumps(config)
+
+# Verify consistency
+assert std_json.loads(original_json) == std_json.loads(final_json)
+```
+
+## Installation
+
+Install format support individually:
+
+```bash
+pip install lodum              # JSON only (built-in)
+pip install lodum[yaml]        # + YAML
+pip install lodum[toml]        # + TOML  
+pip install lodum[msgpack]     # + MessagePack
+pip install lodum[cbor]        # + CBOR
+pip install lodum[bson]        # + BSON
+pip install lodum[all]         # All formats
+```
+
+## Related
+
+- [The @lodum Decorator](/concepts/decorator) - Enable serialization for classes
+- [Field Customization](/concepts/field-customization) - Control field behavior per format
+- [Implementing New Formats](/advanced/implementing-formats) - Add support for new formats

@@ -1,0 +1,304 @@
+---
+title: Streaming Serialization
+description: Handle large datasets efficiently with O(1) memory streaming serialization and deserialization
+---
+
+## Overview
+
+For extremely large datasets, Lodum supports O(1) memory streaming serialization. This allows you to encode massive object graphs directly to an IO stream (like a file or socket) without building the entire representation in memory.
+
+<Info>
+Streaming serialization is essential when:
+- Working with datasets that don't fit in memory
+- Sending data over networks incrementally
+- Processing large files without loading them entirely
+</Info>
+
+## Streaming Dump (Serialization)
+
+Use `json.dump()` to write JSON directly to a stream:
+
+### Writing to Files
+
+```python
+from lodum import lodum, json
+from pathlib import Path
+
+@lodum
+class Point:
+    def __init__(self, x: int, y: int):
+        self.x = x
+        self.y = y
+
+@lodum
+class LargeDataset:
+    def __init__(self, points: list[Point]):
+        self.points = points
+
+# Create a large dataset
+points = [Point(i, i * 2) for i in range(1_000_000)]
+dataset = LargeDataset(points=points)
+
+# Stream to file without loading entire JSON in memory
+output_path = Path("large_dataset.json")
+json.dump(dataset, output_path)
+```
+
+### Writing to File Objects
+
+```python
+import sys
+
+@lodum
+class Data:
+    def __init__(self, items: list[int]):
+        self.items = items
+
+data = Data(items=list(range(1_000_000)))
+
+# Stream to stdout
+json.dump(data, sys.stdout)
+
+# Stream to a file handle
+with open("output.json", "w") as f:
+    json.dump(data, f)
+```
+
+### String vs Streaming Modes
+
+Lodum automatically chooses the right mode based on whether you provide a target:
+
+```python
+# String mode (IR-based, entire result in memory)
+json_string = json.dumps(data)
+
+# Streaming mode (O(1) memory, writes directly to stream)
+json.dump(data, output_file)
+```
+
+<Note>
+`dump()` returns `None` when writing to a stream, and returns the string when no target is provided.
+</Note>
+
+## Streaming Load (Deserialization)
+
+Use `json.stream()` for lazy, iterator-based deserialization of JSON arrays:
+
+### Processing Large Arrays
+
+```python
+from lodum import lodum, json
+from pathlib import Path
+
+@lodum
+class Record:
+    def __init__(self, id: int, value: str):
+        self.id = id
+        self.value = value
+
+# Assuming records.json contains: [{"id": 1, "value": "a"}, {"id": 2, "value": "b"}, ...]
+for record in json.stream(Record, Path("records.json")):
+    process_record(record)  # Process one at a time
+    # Only one Record object is in memory at a time
+```
+
+### Streaming from File Objects
+
+```python
+# Stream from a file handle (must be opened in binary mode)
+with open("large_array.json", "rb") as f:
+    for item in json.stream(Record, f):
+        print(f"Processing record {item.id}")
+```
+
+<Warning>
+The `stream()` function requires the `ijson` package for incremental JSON parsing:
+
+```bash
+pip install lodum[ijson]
+```
+</Warning>
+
+## Complete Example
+
+Here's a complete example showing both streaming serialization and deserialization:
+
+```python
+from lodum import lodum, json
+from pathlib import Path
+import io
+
+@lodum
+class DataPoint:
+    def __init__(self, timestamp: int, value: float):
+        self.timestamp = timestamp
+        self.value = value
+
+@lodum
+class TimeSeries:
+    def __init__(self, name: str, data: list[DataPoint]):
+        self.name = name
+        self.data = data
+
+# Generate large dataset
+data_points = [
+    DataPoint(timestamp=i, value=i * 0.5)
+    for i in range(1_000_000)
+]
+series = TimeSeries(name="sensor_readings", data=data_points)
+
+# Stream to file (O(1) memory)
+output = Path("sensor_data.json")
+json.dump(series, output)
+
+print(f"Serialized {len(data_points)} points to {output}")
+
+# Load back from file
+loaded_series = json.load(TimeSeries, output)
+print(f"Loaded series: {loaded_series.name}")
+print(f"First point: {loaded_series.data[0].timestamp}")
+```
+
+## Streaming vs Non-Streaming Comparison
+
+<CodeGroup>
+```python Non-Streaming (Memory Intensive)
+from lodum import json
+
+# Entire JSON string built in memory
+json_string = json.dumps(large_object)  
+
+# Write string to file
+with open("output.json", "w") as f:
+    f.write(json_string)
+```
+
+```python Streaming (O(1) Memory)
+from lodum import json
+
+# Writes directly to stream, O(1) memory
+with open("output.json", "w") as f:
+    json.dump(large_object, f)
+```
+</CodeGroup>
+
+## Format Support
+
+Streaming serialization is currently available for:
+
+<CardGroup cols={2}>
+  <Card title="JSON" icon="brackets-curly">
+    Full streaming support via `json.dump()` and `json.stream()`
+  </Card>
+  <Card title="Other Formats" icon="file-code">
+    Check format-specific documentation for streaming capabilities
+  </Card>
+</CardGroup>
+
+## Memory Efficiency
+
+The streaming dumper writes JSON tokens directly to the stream as objects are traversed:
+
+```python
+# Internal implementation (simplified)
+class JsonStreamingDumper:
+    def begin_struct(self, cls):
+        self.write_raw("{")
+    
+    def field(self, name, value, handler, depth, seen):
+        if not self._first_item:
+            self.write_raw(",")
+        self.write_raw(json.dumps(name))
+        self.write_raw(":")
+        handler(value, self, depth, seen)  # Recursively stream value
+    
+    def end_struct(self):
+        self.write_raw("}")
+```
+
+This architecture ensures that:
+- Only the current object being serialized is in memory
+- No intermediate IR (intermediate representation) is built
+- Large collections are streamed item-by-item
+
+## Reading Large Files
+
+When loading large JSON files without streaming, use the `max_size` parameter to control memory limits:
+
+```python
+from lodum import json
+
+# Limit input size to 50MB
+data = json.load(MyClass, "large_file.json", max_size=50 * 1024 * 1024)
+```
+
+<Info>
+The default `max_size` is 10MB. Adjust this based on your memory constraints.
+</Info>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Streaming for Large Datasets">
+    If your dataset exceeds available memory or you're processing millions of records, always use streaming:
+    
+    ```python
+    # Good: O(1) memory
+    json.dump(huge_dataset, output_file)
+    
+    # Bad: Entire dataset in memory
+    json_str = json.dumps(huge_dataset)
+    ```
+  </Accordion>
+
+  <Accordion title="Binary Mode for Stream Loading">
+    The `json.stream()` function requires binary mode because it uses `ijson` internally:
+    
+    ```python
+    # Correct
+    with open("data.json", "rb") as f:
+        for item in json.stream(Record, f):
+            process(item)
+    
+    # Incorrect (will fail)
+    with open("data.json", "r") as f:  # Text mode
+        for item in json.stream(Record, f):
+            process(item)
+    ```
+  </Accordion>
+
+  <Accordion title="Process Items Incrementally">
+    Don't accumulate streamed items back into a list:
+    
+    ```python
+    # Good: Process one at a time
+    for record in json.stream(Record, file):
+        process_and_discard(record)
+    
+    # Bad: Defeats the purpose of streaming
+    all_records = list(json.stream(Record, file))
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Performance Considerations
+
+<Note>
+Streaming serialization provides:
+- **Constant memory usage** regardless of dataset size
+- **Lower peak memory** compared to building entire JSON string
+- **Faster time-to-first-byte** when sending over networks
+</Note>
+
+However, streaming may be slightly slower than non-streaming for small datasets due to the overhead of writing individual tokens.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Schema Generation" icon="file-code" href="/guides/schema-generation">
+    Generate JSON schemas from your data models
+  </Card>
+  <Card title="Extensions" icon="puzzle-piece" href="/guides/extensions">
+    Learn about numpy, pandas, and polars support
+  </Card>
+</CardGroup>

@@ -1,0 +1,241 @@
+---
+title: 'NumPy Extension'
+description: 'NumPy array serialization support'
+---
+
+## Overview
+
+The NumPy extension provides seamless serialization and deserialization support for NumPy arrays. Arrays are converted to nested Python lists during serialization and reconstructed from lists during deserialization.
+
+## Installation
+
+The NumPy extension requires the `numpy` package:
+
+```bash
+pip install numpy
+```
+
+## Registration
+
+Register the NumPy extension before using it:
+
+```python
+from lodum.extensions import numpy
+
+numpy.register()
+```
+
+This registers handlers for `np.ndarray` with the global type registry.
+
+## Supported Types
+
+### np.ndarray
+
+NumPy arrays of any dimension and data type are supported.
+
+## API Reference
+
+### register()
+
+```python
+def register() -> None
+```
+
+Registers NumPy type handlers with the global registry. This function should be called once at application startup before serializing or deserializing NumPy types.
+
+**Example:**
+
+```python
+from lodum.extensions import numpy
+import numpy as np
+from lodum import dumps, loads
+
+numpy.register()
+
+# Serialize a NumPy array
+arr = np.array([[1, 2, 3], [4, 5, 6]])
+data = dumps(arr)
+# Result: [[1, 2, 3], [4, 5, 6]]
+
+# Deserialize back to NumPy array
+result = loads(np.ndarray, data)
+assert isinstance(result, np.ndarray)
+assert result.shape == (2, 3)
+```
+
+## Internal Functions
+
+### _dump_numpy_array()
+
+```python
+def _dump_numpy_array(
+    obj: Any,
+    dumper: Dumper,
+    depth: int,
+    seen: Optional[set]
+) -> Any
+```
+
+Internal dump handler for NumPy arrays. Converts arrays to nested Python lists using `tolist()`.
+
+<ParamField path="obj" type="Any" required>
+  The NumPy array to serialize
+</ParamField>
+
+<ParamField path="dumper" type="Dumper" required>
+  The dumper instance handling serialization
+</ParamField>
+
+<ParamField path="depth" type="int" required>
+  Current recursion depth for cycle detection
+</ParamField>
+
+<ParamField path="seen" type="Optional[set]" required>
+  Set of already-seen objects for cycle detection
+</ParamField>
+
+### _load_numpy_array()
+
+```python
+def _load_numpy_array(
+    cls: Type[Any],
+    loader: Loader,
+    path: Optional[str] = None,
+    depth: int = 0
+) -> Any
+```
+
+Internal load handler for NumPy arrays. Reconstructs arrays from nested Python lists.
+
+<ParamField path="cls" type="Type[Any]" required>
+  The target class type (np.ndarray)
+</ParamField>
+
+<ParamField path="loader" type="Loader" required>
+  The loader instance handling deserialization
+</ParamField>
+
+<ParamField path="path" type="Optional[str]" default="None">
+  Path context for error reporting
+</ParamField>
+
+<ParamField path="depth" type="int" default="0">
+  Current recursion depth
+</ParamField>
+
+### _schema_numpy_array()
+
+```python
+def _schema_numpy_array(
+    t: Type[Any],
+    depth: int,
+    visited: Optional[set]
+) -> Dict[str, Any]
+```
+
+Generates JSON schema representation for NumPy arrays.
+
+**Returns:** `{"type": "array"}`
+
+## Usage Examples
+
+### Basic Array Serialization
+
+```python
+from lodum.extensions import numpy
+import numpy as np
+from lodum import dumps, loads
+
+numpy.register()
+
+# 1D array
+arr = np.array([1, 2, 3, 4, 5])
+data = dumps(arr)
+result = loads(np.ndarray, data)
+assert np.array_equal(arr, result)
+
+# 2D array
+matrix = np.array([[1, 2], [3, 4], [5, 6]])
+data = dumps(matrix)
+result = loads(np.ndarray, data)
+assert np.array_equal(matrix, result)
+```
+
+### Arrays in Lodum Classes
+
+```python
+from lodum import lodum, dumps, loads
+from lodum.extensions import numpy
+import numpy as np
+
+numpy.register()
+
+@lodum
+class DataPoint:
+    name: str
+    features: np.ndarray
+    labels: np.ndarray
+
+point = DataPoint(
+    name="sample_1",
+    features=np.array([0.5, 1.2, 3.4]),
+    labels=np.array([0, 1, 0])
+)
+
+data = dumps(point)
+restored = loads(DataPoint, data)
+
+assert restored.name == "sample_1"
+assert np.array_equal(restored.features, point.features)
+assert np.array_equal(restored.labels, point.labels)
+```
+
+### Multidimensional Arrays
+
+```python
+from lodum.extensions import numpy
+import numpy as np
+from lodum import dumps, loads
+
+numpy.register()
+
+# 3D array
+tensor = np.random.rand(2, 3, 4)
+data = dumps(tensor)
+result = loads(np.ndarray, data)
+
+assert result.shape == tensor.shape
+assert np.allclose(result, tensor)
+```
+
+### Different Data Types
+
+```python
+from lodum.extensions import numpy
+import numpy as np
+from lodum import dumps, loads
+
+numpy.register()
+
+# Integer array
+int_arr = np.array([1, 2, 3], dtype=np.int32)
+data = dumps(int_arr)
+result = loads(np.ndarray, data)
+
+# Float array
+float_arr = np.array([1.5, 2.5, 3.5], dtype=np.float64)
+data = dumps(float_arr)
+result = loads(np.ndarray, data)
+
+# Boolean array
+bool_arr = np.array([True, False, True], dtype=np.bool_)
+data = dumps(bool_arr)
+result = loads(np.ndarray, data)
+```
+
+## Notes
+
+- Arrays are converted to Python lists during serialization using `tolist()`, which means the original NumPy dtype information may be lost
+- After deserialization, NumPy will infer the appropriate dtype from the list data
+- For preserving exact dtype information, consider storing it separately as metadata
+- Large arrays will result in correspondingly large serialized output
